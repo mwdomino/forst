@@ -1,0 +1,11 @@
+[package]
+name = "rs-datastore"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "benchmark"
+harness = false
