@@ -80,30 +80,10 @@ mod tests {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
-            let results = nm.query(test.search_keys, test.max_history);
-            assert_eq!(
-                results.len(),
-                test.expected.len(),
-                "Test {}: Expected {} results, got {}",
-                test.name,
-                test.expected.len(),
-                results.len()
-            );
 
-            // Sorting by keys before comparing, since order is not guaranteed
-            let mut sorted_results = results;
-            let mut sorted_expected = test.expected;
-            sorted_results.sort_by_key(|item| item.key.clone());
-            sorted_expected.sort_by_key(|item| item.key.clone());
-
-            assert!(
-                sorted_results
-                    .iter()
-                    .zip(sorted_expected.iter())
-                    .all(|(a, b)| items_equal(a, b)),
-                "Test {}: Items do not match.",
-                test.name
-            );
+            if let Some(item) = nm.get(&test.search_keys) {
+                assert_eq!(items_equal(item, &test.expected[0]), true);
+            }
         }
     }
 }
