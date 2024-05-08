@@ -1,7 +1,15 @@
-use super::Item;
+use super::*;
 
 pub fn items_equal(a: &Item, b: &Item) -> bool {
     a.key == b.key && a.value == b.value
+}
+
+pub struct TestCase {
+    pub name: &'static str,
+    pub setup: Box<dyn Fn(&mut NestedMap)>,
+    pub search_keys: Vec<String>,
+    pub expected: Vec<Item>,
+    pub max_history: usize,
 }
 
 #[macro_export]

@@ -88,17 +88,9 @@ impl NestedMap {
 
 mod tests {
     use super::*;
-    use crate::nestedmap::test_helpers::items_equal;
+    use crate::nestedmap::test_helpers::*;
     use crate::*;
     use std::time::{Duration, SystemTime};
-
-    struct TestCase {
-        name: &'static str,
-        setup: Box<dyn Fn(&mut NestedMap)>,
-        prefix_keys: Vec<String>,
-        expected: Vec<Item>,
-        max_history: usize,
-    }
 
     #[test]
     fn test_queries() {
@@ -108,7 +100,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     nm.set(&vec_string!["a", "b", "c"], b"exact value");
                 }),
-                prefix_keys: vec_string!["a", "b", "c"],
+                search_keys: vec_string!["a", "b", "c"],
                 expected: vec![Item {
                     key: vec_string!["a", "b", "c"],
                     value: b"exact value".to_vec(),
@@ -124,7 +116,7 @@ mod tests {
                     nm.set(&vec_string!["a", "b", "y"], b"wildcard value aby");
                     nm.set(&vec_string!["a", "b", "z", "z"], b"wildcard value abzz");
                 }),
-                prefix_keys: vec_string!["a", "b", "*"],
+                search_keys: vec_string!["a", "b", "*"],
                 expected: vec![
                     Item {
                         key: vec_string!["a", "b", "c"],
@@ -153,7 +145,7 @@ mod tests {
                     nm.set(&vec_string!["a", "b", "y", "z"], b"prefix value abyz");
                     nm.set(&vec_string!["a", "b", "y", "z", "z"], b"prefix value abyzz");
                 }),
-                prefix_keys: vec_string!["a", "b", "y", ">"],
+                search_keys: vec_string!["a", "b", "y", ">"],
                 expected: vec![
                     Item {
                         key: vec_string!["a", "b", "y", "z"],
@@ -174,7 +166,7 @@ mod tests {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
-            let results = nm.query(test.prefix_keys, test.max_history);
+            let results = nm.query(test.search_keys, test.max_history);
             assert_eq!(
                 results.len(),
                 test.expected.len(),
