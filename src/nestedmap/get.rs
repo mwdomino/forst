@@ -1,32 +1,24 @@
+use super::config::VALUE_KEY;
 use super::{Item, NestedMap, NestedValue};
 
 impl NestedMap {
     pub fn get(&self, keys: &[String]) -> Option<&Item> {
         let mut current_map = &self.data;
 
-        for (i, key) in keys.iter().enumerate() {
-            if let Some(nested_value) = current_map.get(key) {
-                match nested_value {
-                    NestedValue::Map(next_map) => {
-                        if i == keys.len() - 1 {
-                            return None;
-                        } else {
-                            current_map = &next_map.data;
-                        }
-                    }
-                    NestedValue::Items(items) => {
-                        if let Some(item) = items.first() {
-                            return Some(item);
-                        } else {
-                            return None;
-                        }
-                    }
-                }
+        for key in keys.iter() {
+            if let Some(NestedValue::Map(map)) = current_map.get(key) {
+                current_map = &map.data;
             } else {
-                return None;
+                return None; // Early exit if no map is found
             }
         }
-        None
+
+        // Try to retrieve items at the VALUE_KEY in the final map
+        if let Some(NestedValue::Items(items)) = current_map.get(VALUE_KEY) {
+            items.first() // Return the first item if available
+        } else {
+            None
+        }
     }
 }
 

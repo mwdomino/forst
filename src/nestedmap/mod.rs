@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+pub mod config;
 pub mod get;
+pub mod query;
 pub mod set;
 pub mod test_helpers;
 
@@ -17,7 +19,7 @@ pub enum NestedValue {
     Items(Vec<Item>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Item {
     key: Vec<String>,
     value: Vec<u8>,
