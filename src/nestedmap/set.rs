@@ -38,17 +38,18 @@ impl NestedMap {
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::items_equal;
+    use crate::vec_string;
 
     #[test]
     fn test_set() {
         let mut nm = NestedMap::new(1);
         let expected = &Item {
-            key: vec!["a".to_string()],
+            key: vec_string!["a"],
             value: b"some value a".to_vec(),
             timestamp: SystemTime::now(),
         };
 
-        nm.set(&["a".to_string()], b"some value a");
+        nm.set(&vec_string!["a"], b"some value a");
         if let Some(NestedValue::Items(items)) = nm.data.get("a").and_then(|v| match v {
             NestedValue::Map(map) => map.data.get(VALUE_KEY),
             _ => None,
@@ -65,7 +66,7 @@ mod tests {
     #[test]
     fn test_set_deep() {
         let mut nm = NestedMap::new(1);
-        let key: Vec<String> = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let key: Vec<String> = vec_string!["a", "b", "c"];
         let value: Vec<u8> = b"some value abc".to_vec();
         let expected = &Item {
             key: key.clone(),
@@ -99,13 +100,13 @@ mod tests {
         let mut nm = NestedMap::new(5);
 
         let expected_first = &Item {
-            key: vec!["a".to_string()],
+            key: vec_string!["a"],
             value: b"some value a1".to_vec(),
             timestamp: SystemTime::now(),
         };
 
         let expected_second = &Item {
-            key: vec!["a".to_string()],
+            key: vec_string!["a"],
             value: b"some value a2".to_vec(),
             timestamp: SystemTime::now(),
         };
@@ -116,11 +117,6 @@ mod tests {
         if let Some(NestedValue::Map(map)) = nm.data.get("a") {
             if let Some(NestedValue::Items(items)) = map.data.get(VALUE_KEY) {
                 assert_eq!(items.len(), 2);
-
-                println!("##ITEM0: {:?}", items[0].value.to_ascii_lowercase());
-                println!("##EXPEC: {:?}", expected_second.value.to_ascii_lowercase());
-                println!("##ITEM1: {:?}", items[1].value.to_ascii_lowercase());
-                println!("##EXPEC: {:?}", expected_first.value.to_ascii_lowercase());
 
                 assert_eq!(items_equal(&items[0], expected_second), true);
                 assert_eq!(items_equal(&items[1], expected_first), true);

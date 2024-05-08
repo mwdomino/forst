@@ -25,13 +25,14 @@ impl NestedMap {
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::items_equal;
+    use crate::vec_string;
     use std::time::SystemTime;
 
     #[test]
     fn test_get_exact() {
         let mut nm = NestedMap::new(1);
         let expected: &Item = &Item {
-            key: vec!["a".to_string()],
+            key: vec_string!["a"],
             value: b"the value a".to_vec(),
             timestamp: SystemTime::now(),
         };

@@ -89,6 +89,7 @@ impl NestedMap {
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::items_equal;
+    use crate::*;
     use std::time::{Duration, SystemTime};
 
     struct TestCase {
@@ -105,14 +106,11 @@ mod tests {
             TestCase {
                 name: "Test exact match",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "c".to_string()],
-                        b"exact value",
-                    );
+                    nm.set(&vec_string!["a", "b", "c"], b"exact value");
                 }),
-                prefix_keys: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                prefix_keys: vec_string!["a", "b", "c"],
                 expected: vec![Item {
-                    key: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                    key: vec_string!["a", "b", "c"],
                     value: b"exact value".to_vec(),
                     timestamp: SystemTime::now(),
                 }],
@@ -121,42 +119,25 @@ mod tests {
             TestCase {
                 name: "Test wildcard match",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "c".to_string()],
-                        b"wildcard value abc",
-                    );
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "x".to_string()],
-                        b"wildcard value abx",
-                    );
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "y".to_string()],
-                        b"wildcard value aby",
-                    );
-                    nm.set(
-                        &[
-                            "a".to_string(),
-                            "b".to_string(),
-                            "z".to_string(),
-                            "z".to_string(),
-                        ],
-                        b"wildcard value abzz",
-                    );
+                    nm.set(&vec_string!["a", "b", "c"], b"wildcard value abc");
+                    nm.set(&vec_string!["a", "b", "x"], b"wildcard value abx");
+                    nm.set(&vec_string!["a", "b", "y"], b"wildcard value aby");
+                    nm.set(&vec_string!["a", "b", "z", "z"], b"wildcard value abzz");
                 }),
-                prefix_keys: vec!["a".to_string(), "b".to_string(), "*".to_string()],
+                prefix_keys: vec_string!["a", "b", "*"],
                 expected: vec![
                     Item {
-                        key: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                        key: vec_string!["a", "b", "c"],
                         value: b"wildcard value abc".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec!["a".to_string(), "b".to_string(), "x".to_string()],
+                        key: vec_string!["a", "b", "x"],
                         value: b"wildcard value abx".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec!["a".to_string(), "b".to_string(), "y".to_string()],
+                        key: vec_string!["a", "b", "y"],
                         value: b"wildcard value aby".to_vec(),
                         timestamp: SystemTime::now(),
                     },
@@ -166,63 +147,21 @@ mod tests {
             TestCase {
                 name: "Test prefix match",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "c".to_string()],
-                        b"prefix value abc",
-                    );
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "x".to_string()],
-                        b"prefix value abx",
-                    );
-                    nm.set(
-                        &["a".to_string(), "b".to_string(), "y".to_string()],
-                        b"prefix value aby",
-                    );
-                    nm.set(
-                        &[
-                            "a".to_string(),
-                            "b".to_string(),
-                            "y".to_string(),
-                            "z".to_string(),
-                        ],
-                        b"prefix value abyz",
-                    );
-                    nm.set(
-                        &[
-                            "a".to_string(),
-                            "b".to_string(),
-                            "y".to_string(),
-                            "z".to_string(),
-                            "z".to_string(),
-                        ],
-                        b"prefix value abyzz",
-                    );
+                    nm.set(&vec_string!["a", "b", "c"], b"prefix value abc");
+                    nm.set(&vec_string!["a", "b", "x"], b"prefix value abx");
+                    nm.set(&vec_string!["a", "b", "y"], b"prefix value aby");
+                    nm.set(&vec_string!["a", "b", "y", "z"], b"prefix value abyz");
+                    nm.set(&vec_string!["a", "b", "y", "z", "z"], b"prefix value abyzz");
                 }),
-                prefix_keys: vec![
-                    "a".to_string(),
-                    "b".to_string(),
-                    "y".to_string(),
-                    ">".to_string(),
-                ],
+                prefix_keys: vec_string!["a", "b", "y", ">"],
                 expected: vec![
                     Item {
-                        key: vec![
-                            "a".to_string(),
-                            "b".to_string(),
-                            "y".to_string(),
-                            "z".to_string(),
-                        ],
+                        key: vec_string!["a", "b", "y", "z"],
                         value: b"prefix value abyz".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec![
-                            "a".to_string(),
-                            "b".to_string(),
-                            "y".to_string(),
-                            "z".to_string(),
-                            "z".to_string(),
-                        ],
+                        key: vec_string!["a", "b", "y", "z", "z"],
                         value: b"prefix value abyzz".to_vec(),
                         timestamp: SystemTime::now(),
                     },
