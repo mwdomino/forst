@@ -5,7 +5,7 @@ fn bench_get(c: &mut Criterion) {
     let key: Vec<String> = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
     let mut nm = NestedMap::new(1);
-    nm.set(&key, b"some value a");
+    nm.set(&key, b"some value a", None);
 
     c.bench_function("get_key", |b| {
         b.iter(|| {
@@ -27,7 +27,7 @@ fn bench_set(c: &mut Criterion) {
 
     c.bench_function("set_key", |b| {
         b.iter(|| {
-            nm.set(&key, b"some value a");
+            nm.set(&key, b"some value a", None);
         });
     });
 }

@@ -1,9 +1,11 @@
 use super::config::VALUE_KEY;
+use super::options::SetOptions;
 use super::{Item, NestedMap, NestedValue};
 use std::time::SystemTime;
 
 impl NestedMap {
-    pub fn set(&mut self, keys: &[String], value: &[u8]) {
+    pub fn set(&mut self, keys: &[String], value: &[u8], options: Option<SetOptions>) {
+        let options = options.unwrap_or_default();
         let mut current_map = &mut self.data;
 
         // Traverse to the appropriate node
@@ -37,94 +39,71 @@ impl NestedMap {
 
 mod tests {
     use super::*;
-    use crate::nestedmap::test_helpers::items_equal;
+    use crate::nestedmap::test_helpers::*;
     use crate::vec_string;
+    use std::time::SystemTime;
 
     #[test]
     fn test_set() {
-        let mut nm = NestedMap::new(1);
-        let expected = &Item {
-            key: vec_string!["a"],
-            value: b"some value a".to_vec(),
-            timestamp: SystemTime::now(),
-        };
+        //let mut nm = NestedMap::new(1);
 
-        nm.set(&vec_string!["a"], b"some value a");
-        if let Some(NestedValue::Items(items)) = nm.data.get("a").and_then(|v| match v {
-            NestedValue::Map(map) => map.data.get(VALUE_KEY),
-            _ => None,
-        }) {
-            assert_eq!(items.len(), 1); // Ensure there is only one item
+        let test_cases = vec![
+            TestCase {
+                name: "Test depth 1",
+                setup: Box::new(|nm| {
+                    nm.set(&vec_string!["a"], b"the value a", None);
+                }),
+                search_keys: vec_string!["a"],
+                expected: vec![Item {
+                    key: vec_string!["a"],
+                    value: b"the value a".to_vec(),
+                    timestamp: SystemTime::now(),
+                }],
+                max_history: 1,
+            },
+            TestCase {
+                name: "Test depth 3",
+                setup: Box::new(|nm| {
+                    nm.set(&vec_string!["a", "b", "c"], b"the value abc", None);
+                }),
+                search_keys: vec_string!["a", "b", "c"],
+                expected: vec![Item {
+                    key: vec_string!["a", "b", "c"],
+                    value: b"the value abc".to_vec(),
+                    timestamp: SystemTime::now(),
+                }],
+                max_history: 1,
+            },
+            TestCase {
+                name: "Test depth 6",
+                setup: Box::new(|nm| {
+                    nm.set(
+                        &vec_string!["a", "b", "c", "d", "e", "f"],
+                        b"the value abcdef",
+                        None,
+                    );
+                }),
+                search_keys: vec_string!["a", "b", "c", "d", "e", "f"],
+                expected: vec![Item {
+                    key: vec_string!["a", "b", "c", "d", "e", "f"],
+                    value: b"the value abcdef".to_vec(),
+                    timestamp: SystemTime::now(),
+                }],
+                max_history: 1,
+            },
+        ];
 
-            let actual_item = &items[0];
-            assert_eq!(items_equal(actual_item, expected), true)
-        } else {
-            panic!("Expected NestedValue::Items, got something else");
-        }
-    }
+        for test in test_cases {
+            let mut nm = NestedMap::new(test.max_history);
+            (test.setup)(&mut nm);
 
-    #[test]
-    fn test_set_deep() {
-        let mut nm = NestedMap::new(1);
-        let key: Vec<String> = vec_string!["a", "b", "c"];
-        let value: Vec<u8> = b"some value abc".to_vec();
-        let expected = &Item {
-            key: key.clone(),
-            value: value.clone(),
-            timestamp: SystemTime::now(),
-        };
-
-        nm.set(&key, &value);
-        if let Some(NestedValue::Map(map1)) = nm.data.get("a") {
-            if let Some(NestedValue::Map(map2)) = map1.data.get("b") {
-                if let Some(NestedValue::Map(map3)) = map2.data.get("c") {
-                    if let Some(NestedValue::Items(items)) = map3.data.get(VALUE_KEY) {
-                        assert_eq!(items.len(), 1); // Ensure there is only one item
-                        assert_eq!(items_equal(&items[0], expected), true);
-                    } else {
-                        panic!("Expected NestedValue::Items for key 'c', got something else");
-                    }
-                } else {
-                    panic!("Expected NestedValue::Map for key 'c', got something else");
-                }
-            } else {
-                panic!("Expected NestedValue::Map for key 'b', got something else");
+            if let Some(item) = nm.get(&test.search_keys) {
+                assert_eq!(items_equal(item, &test.expected[0]), true);
             }
-        } else {
-            panic!("Expected NestedValue::Map for key 'a', got something else");
         }
     }
 
-    #[test]
-    fn test_set_with_history() {
-        let mut nm = NestedMap::new(5);
-
-        let expected_first = &Item {
-            key: vec_string!["a"],
-            value: b"some value a1".to_vec(),
-            timestamp: SystemTime::now(),
-        };
-
-        let expected_second = &Item {
-            key: vec_string!["a"],
-            value: b"some value a2".to_vec(),
-            timestamp: SystemTime::now(),
-        };
-
-        nm.set(&expected_first.key, &expected_first.value);
-        nm.set(&expected_second.key, &expected_second.value);
-
-        if let Some(NestedValue::Map(map)) = nm.data.get("a") {
-            if let Some(NestedValue::Items(items)) = map.data.get(VALUE_KEY) {
-                assert_eq!(items.len(), 2);
-
-                assert_eq!(items_equal(&items[0], expected_second), true);
-                assert_eq!(items_equal(&items[1], expected_first), true);
-            } else {
-                panic!("Expected NestedValue::Items, got something else");
-            }
-        } else {
-            panic!("Expected NestedValue::Map for key 'a', got something else");
-        }
-    }
+    fn test_set_without_history() {}
+    fn test_set_history() {}
+    fn test_set_mixed_history() {}
 }

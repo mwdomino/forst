@@ -98,7 +98,7 @@ mod tests {
             TestCase {
                 name: "Test exact match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"exact value");
+                    nm.set(&vec_string!["a", "b", "c"], b"exact value", None);
                 }),
                 search_keys: vec_string!["a", "b", "c"],
                 expected: vec![Item {
@@ -111,10 +111,14 @@ mod tests {
             TestCase {
                 name: "Test wildcard match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"wildcard value abc");
-                    nm.set(&vec_string!["a", "b", "x"], b"wildcard value abx");
-                    nm.set(&vec_string!["a", "b", "y"], b"wildcard value aby");
-                    nm.set(&vec_string!["a", "b", "z", "z"], b"wildcard value abzz");
+                    nm.set(&vec_string!["a", "b", "c"], b"wildcard value abc", None);
+                    nm.set(&vec_string!["a", "b", "x"], b"wildcard value abx", None);
+                    nm.set(&vec_string!["a", "b", "y"], b"wildcard value aby", None);
+                    nm.set(
+                        &vec_string!["a", "b", "z", "z"],
+                        b"wildcard value abzz",
+                        None,
+                    );
                 }),
                 search_keys: vec_string!["a", "b", "*"],
                 expected: vec![
@@ -139,11 +143,15 @@ mod tests {
             TestCase {
                 name: "Test prefix match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"prefix value abc");
-                    nm.set(&vec_string!["a", "b", "x"], b"prefix value abx");
-                    nm.set(&vec_string!["a", "b", "y"], b"prefix value aby");
-                    nm.set(&vec_string!["a", "b", "y", "z"], b"prefix value abyz");
-                    nm.set(&vec_string!["a", "b", "y", "z", "z"], b"prefix value abyzz");
+                    nm.set(&vec_string!["a", "b", "c"], b"prefix value abc", None);
+                    nm.set(&vec_string!["a", "b", "x"], b"prefix value abx", None);
+                    nm.set(&vec_string!["a", "b", "y"], b"prefix value aby", None);
+                    nm.set(&vec_string!["a", "b", "y", "z"], b"prefix value abyz", None);
+                    nm.set(
+                        &vec_string!["a", "b", "y", "z", "z"],
+                        b"prefix value abyzz",
+                        None,
+                    );
                 }),
                 search_keys: vec_string!["a", "b", "y", ">"],
                 expected: vec![

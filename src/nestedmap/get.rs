@@ -1,5 +1,5 @@
 use super::config::VALUE_KEY;
-use super::{Item, NestedMap, NestedValue};
+use super::*;
 
 impl NestedMap {
     pub fn get(&self, keys: &[String]) -> Option<&Item> {
@@ -36,7 +36,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a"], b"the value a");
+                    nm.set(&vec_string!["a"], b"the value a", None);
                 }),
                 search_keys: vec_string!["a"],
                 expected: vec![Item {
@@ -49,7 +49,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"the value abc");
+                    nm.set(&vec_string!["a", "b", "c"], b"the value abc", None);
                 }),
                 search_keys: vec_string!["a", "b", "c"],
                 expected: vec![Item {
@@ -65,6 +65,7 @@ mod tests {
                     nm.set(
                         &vec_string!["a", "b", "c", "d", "e", "f"],
                         b"the value abcdef",
+                        None,
                     );
                 }),
                 search_keys: vec_string!["a", "b", "c", "d", "e", "f"],

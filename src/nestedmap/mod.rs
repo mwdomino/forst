@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 pub mod config;
 pub mod get;
+pub mod options;
 pub mod query;
 pub mod set;
 pub mod test_helpers;
