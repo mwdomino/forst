@@ -1,10 +1,12 @@
 use super::config::VALUE_KEY;
+use super::options::GetOptions;
 use super::{Item, NestedMap, NestedValue};
 
 impl NestedMap {
-    pub fn query(&self, keys: Vec<String>, history_max: usize) -> Vec<Item> {
+    pub fn query(&self, keys: Vec<String>, options: Option<GetOptions>) -> Vec<Item> {
+        let options = options.unwrap_or_default();
         let mut results = Vec::new();
-        self.query_recursive(&keys, self, &mut results, history_max);
+        self.query_recursive(&keys, self, &mut results, options.history_count);
         results
     }
 
@@ -174,7 +176,10 @@ mod tests {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
-            let results = nm.query(test.search_keys, test.max_history);
+            let results = nm.query(
+                test.search_keys,
+                Some(GetOptions::new().history_count(test.max_history)),
+            );
             assert_eq!(
                 results.len(),
                 test.expected.len(),
