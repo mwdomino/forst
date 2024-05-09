@@ -2,32 +2,23 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rs_datastore::nestedmap::{Item, NestedMap}; // Import your NestedMap module
 
 fn bench_get(c: &mut Criterion) {
-    let key: Vec<String> = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-
     let mut nm = NestedMap::new(1);
-    nm.set(&key, b"some value a", None);
+
+    nm.set("a.b.c".to_string(), b"some value a", None);
 
     c.bench_function("get_key", |b| {
         b.iter(|| {
-            let _ = nm.get(&key);
+            let _ = nm.get("a.b.c".to_string());
         });
     });
 }
 
 fn bench_set(c: &mut Criterion) {
-    let key: Vec<String> = vec![
-        "a".to_string(),
-        "b".to_string(),
-        "c".to_string(),
-        "d".to_string(),
-        "e".to_string(),
-    ];
-
     let mut nm = NestedMap::new(1);
 
     c.bench_function("set_key", |b| {
         b.iter(|| {
-            nm.set(&key, b"some value a", None);
+            nm.set("a.b.c.d.e".to_string(), b"some value a", None);
         });
     });
 }
