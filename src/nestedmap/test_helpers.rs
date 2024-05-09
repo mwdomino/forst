@@ -7,7 +7,7 @@ pub fn items_equal(a: &Item, b: &Item) -> bool {
 pub struct TestCase {
     pub name: &'static str,
     pub setup: Box<dyn Fn(&mut NestedMap)>,
-    pub search_keys: Vec<String>,
+    pub search_keys: String,
     pub expected: Vec<Item>,
     pub max_history: usize,
 }

@@ -1,18 +1,18 @@
-use super::config::VALUE_KEY;
+use super::config::*;
 use super::options::GetOptions;
 use super::{Item, NestedMap, NestedValue};
 
 impl NestedMap {
-    pub fn query(&self, keys: Vec<String>, options: Option<GetOptions>) -> Vec<Item> {
+    pub fn query(&self, keys: String, options: Option<GetOptions>) -> Vec<Item> {
         let options = options.unwrap_or_default();
         let mut results = Vec::new();
-        self.query_recursive(&keys, self, &mut results, options.history_count);
+        self.query_recursive(keys, self, &mut results, options.history_count);
         results
     }
 
     fn query_recursive(
         &self,
-        keys: &[String],
+        keys: String,
         current: &NestedMap,
         results: &mut Vec<Item>,
         history_max: usize,
@@ -26,11 +26,12 @@ impl NestedMap {
             return;
         }
 
-        let next_key = &keys[0];
-        let remaining_keys = &keys[1..];
+        let ikeys: Vec<&str> = keys.split(DELIMITER).collect();
+        let next_key = ikeys[0];
+        let remaining_keys = &ikeys[1..].join(DELIMITER);
 
-        match next_key.as_str() {
-            "*" => {
+        match next_key {
+            WILDCARD => {
                 // Iterate through all entries in the current map
                 for (key, value) in &current.data {
                     if key == VALUE_KEY {
@@ -40,11 +41,16 @@ impl NestedMap {
                         }
                     } else if let NestedValue::Map(nested_map) = value {
                         // Recurse into every nested map when "*" is encountered
-                        self.query_recursive(remaining_keys, nested_map, results, history_max);
+                        self.query_recursive(
+                            remaining_keys.to_string(),
+                            nested_map,
+                            results,
+                            history_max,
+                        );
                     }
                 }
             }
-            ">" => {
+            COLLECTOR => {
                 self.collect_all(current, results, true, history_max);
             }
             _ => {
@@ -56,7 +62,12 @@ impl NestedMap {
                             results.extend_from_slice(&items[..count]);
                         }
                     } else {
-                        self.query_recursive(remaining_keys, nested_map, results, history_max);
+                        self.query_recursive(
+                            remaining_keys.to_string(),
+                            nested_map,
+                            results,
+                            history_max,
+                        );
                     }
                 }
             }
@@ -100,11 +111,11 @@ mod tests {
             TestCase {
                 name: "Test exact match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"exact value", None);
+                    nm.set("a.b.c".to_string(), b"exact value", None);
                 }),
-                search_keys: vec_string!["a", "b", "c"],
+                search_keys: "a.b.c".to_string(),
                 expected: vec![Item {
-                    key: vec_string!["a", "b", "c"],
+                    key: "a.b.c".to_string(),
                     value: b"exact value".to_vec(),
                     timestamp: SystemTime::now(),
                 }],
@@ -113,29 +124,25 @@ mod tests {
             TestCase {
                 name: "Test wildcard match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"wildcard value abc", None);
-                    nm.set(&vec_string!["a", "b", "x"], b"wildcard value abx", None);
-                    nm.set(&vec_string!["a", "b", "y"], b"wildcard value aby", None);
-                    nm.set(
-                        &vec_string!["a", "b", "z", "z"],
-                        b"wildcard value abzz",
-                        None,
-                    );
+                    nm.set("a.b.c".to_string(), b"wildcard value abc", None);
+                    nm.set("a.b.x".to_string(), b"wildcard value abx", None);
+                    nm.set("a.b.y".to_string(), b"wildcard value aby", None);
+                    nm.set("a.b.z.z".to_string(), b"wildcard value abzz", None);
                 }),
-                search_keys: vec_string!["a", "b", "*"],
+                search_keys: "a.b.*".to_string(),
                 expected: vec![
                     Item {
-                        key: vec_string!["a", "b", "c"],
+                        key: "a.b.c".to_string(),
                         value: b"wildcard value abc".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec_string!["a", "b", "x"],
+                        key: "a.b.x".to_string(),
                         value: b"wildcard value abx".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec_string!["a", "b", "y"],
+                        key: "a.b.y".to_string(),
                         value: b"wildcard value aby".to_vec(),
                         timestamp: SystemTime::now(),
                     },
@@ -145,25 +152,21 @@ mod tests {
             TestCase {
                 name: "Test prefix match",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"prefix value abc", None);
-                    nm.set(&vec_string!["a", "b", "x"], b"prefix value abx", None);
-                    nm.set(&vec_string!["a", "b", "y"], b"prefix value aby", None);
-                    nm.set(&vec_string!["a", "b", "y", "z"], b"prefix value abyz", None);
-                    nm.set(
-                        &vec_string!["a", "b", "y", "z", "z"],
-                        b"prefix value abyzz",
-                        None,
-                    );
+                    nm.set("a.b.c".to_string(), b"prefix value abc", None);
+                    nm.set("a.b.x".to_string(), b"prefix value abx", None);
+                    nm.set("a.b.y".to_string(), b"prefix value aby", None);
+                    nm.set("a.b.y.z".to_string(), b"prefix value abyz", None);
+                    nm.set("a.b.y.z.z".to_string(), b"prefix value abyzz", None);
                 }),
-                search_keys: vec_string!["a", "b", "y", ">"],
+                search_keys: "a.b.y.>".to_string(),
                 expected: vec![
                     Item {
-                        key: vec_string!["a", "b", "y", "z"],
+                        key: "a.b.y.z".to_string(),
                         value: b"prefix value abyz".to_vec(),
                         timestamp: SystemTime::now(),
                     },
                     Item {
-                        key: vec_string!["a", "b", "y", "z", "z"],
+                        key: "a.b.y.z.z".to_string(),
                         value: b"prefix value abyzz".to_vec(),
                         timestamp: SystemTime::now(),
                     },

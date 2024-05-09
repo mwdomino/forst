@@ -1,17 +1,17 @@
-use super::config::VALUE_KEY;
+use super::config::*;
 use super::options::SetOptions;
 use super::{Item, NestedMap, NestedValue};
 use std::time::SystemTime;
 
 impl NestedMap {
-    pub fn set(&mut self, keys: &[String], value: &[u8], options: Option<SetOptions>) {
+    pub fn set(&mut self, keys: String, value: &[u8], options: Option<SetOptions>) {
         let options = options.unwrap_or_default();
         let mut current_map = &mut self.data;
 
         // Traverse to the appropriate node
-        for key in keys.iter() {
+        for key in keys.split(DELIMITER) {
             current_map = current_map
-                .entry(key.clone())
+                .entry(key.to_string())
                 .or_insert_with(|| NestedValue::Map(NestedMap::new(self.max_history)))
                 .as_map_mut();
         }
@@ -23,7 +23,7 @@ impl NestedMap {
 
         if let NestedValue::Items(items) = items {
             let new_item = Item {
-                key: keys.to_vec(),
+                key: keys,
                 value: value.to_vec(),
                 timestamp: SystemTime::now(),
             };
@@ -61,11 +61,11 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a"], b"the value a", None);
+                    nm.set("a".to_string(), b"the value a", None);
                 }),
-                search_keys: vec_string!["a"],
+                search_keys: "a".to_string(),
                 expected: vec![Item {
-                    key: vec_string!["a"],
+                    key: "a".to_string(),
                     value: b"the value a".to_vec(),
                     timestamp: SystemTime::now(),
                 }],
@@ -74,11 +74,11 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set(&vec_string!["a", "b", "c"], b"the value abc", None);
+                    nm.set("a.b.c".to_string(), b"the value abc", None);
                 }),
-                search_keys: vec_string!["a", "b", "c"],
+                search_keys: "a.b.c".to_string(),
                 expected: vec![Item {
-                    key: vec_string!["a", "b", "c"],
+                    key: "a.b.c".to_string(),
                     value: b"the value abc".to_vec(),
                     timestamp: SystemTime::now(),
                 }],
@@ -87,15 +87,11 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        &vec_string!["a", "b", "c", "d", "e", "f"],
-                        b"the value abcdef",
-                        None,
-                    );
+                    nm.set("a.b.c.d.e.f".to_string(), b"the value abcdef", None);
                 }),
-                search_keys: vec_string!["a", "b", "c", "d", "e", "f"],
+                search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![Item {
-                    key: vec_string!["a", "b", "c", "d", "e", "f"],
+                    key: "a.b.c.d.e.f".to_string(),
                     value: b"the value abcdef".to_vec(),
                     timestamp: SystemTime::now(),
                 }],
@@ -115,7 +111,7 @@ mod tests {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
 
-            if let Some(item) = nm.get(&test.search_keys) {
+            if let Some(item) = nm.get(test.search_keys) {
                 assert_eq!(items_equal(item, &test.expected[0]), true);
             }
         }
