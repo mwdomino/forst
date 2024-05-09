@@ -28,6 +28,16 @@ impl NestedMap {
                 timestamp: SystemTime::now(),
             };
 
+            if options.preserve_history == false {
+                if items.len() > 0 {
+                    items[0] = new_item;
+                } else {
+                    items.insert(0, new_item);
+                }
+
+                return;
+            }
+
             // Prepend new item to the list to keep the newest items at the start
             if items.len() >= self.max_history {
                 items.pop(); // Remove the oldest item if we exceed the max history
