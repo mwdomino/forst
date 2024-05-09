@@ -10,11 +10,10 @@ impl Default for SetOptions {
 }
 
 impl SetOptions {
-    // Provides a default new method
     pub fn new() -> Self {
         Self {
-            preserve_history: false,                   // Default value
-            ttl: std::time::Duration::from_secs(3600), // Example default TTL
+            preserve_history: false,
+            ttl: std::time::Duration::from_secs(3600),
         }
     }
 
@@ -43,9 +42,7 @@ impl Default for GetOptions {
 impl GetOptions {
     // Default constructor
     pub fn new() -> Self {
-        Self {
-            history_count: 1, // Default value
-        }
+        Self { history_count: 1 }
     }
 
     // Setter method
