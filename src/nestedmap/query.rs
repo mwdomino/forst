@@ -170,9 +170,12 @@ mod tests {
                 ],
                 max_history: 1,
             },
-            // More test cases can be added here in the same format
         ];
 
+        query_tests(test_cases)
+    }
+
+    fn query_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);

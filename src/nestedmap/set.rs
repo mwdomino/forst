@@ -103,6 +103,14 @@ mod tests {
             },
         ];
 
+        set_tests(test_cases)
+    }
+
+    fn test_set_without_history() {}
+    fn test_set_history() {}
+    fn test_set_mixed_history() {}
+
+    fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
@@ -112,8 +120,4 @@ mod tests {
             }
         }
     }
-
-    fn test_set_without_history() {}
-    fn test_set_history() {}
-    fn test_set_mixed_history() {}
 }

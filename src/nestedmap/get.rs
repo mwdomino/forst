@@ -78,6 +78,10 @@ mod tests {
             },
         ];
 
+        get_tests(test_cases)
+    }
+
+    fn get_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
