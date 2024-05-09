@@ -49,6 +49,7 @@ impl NestedMap {
 
 mod tests {
     use super::*;
+    use crate::nestedmap::options::*;
     use crate::nestedmap::test_helpers::*;
     use crate::vec_string;
     use std::time::SystemTime;
@@ -102,17 +103,224 @@ mod tests {
         set_tests(test_cases)
     }
 
-    fn test_set_without_history() {}
-    fn test_set_history() {}
-    fn test_set_mixed_history() {}
+    #[test]
+    fn test_set_without_history() {
+        let test_cases = vec![TestCase {
+            name: "Test without history option",
+            setup: Box::new(|nm| {
+                for i in 1..=7 {
+                    nm.set(
+                        "a.b.c.d".to_string(),
+                        &format!("value{}", i).into_bytes(),
+                        Some(SetOptions::new().preserve_history(false)),
+                    );
+                }
+            }),
+            search_keys: "a.b.c.d".to_string(),
+            expected: vec![Item {
+                key: "a.b.c.d".to_string(),
+                value: b"value7".to_vec(),
+                timestamp: SystemTime::now(),
+            }],
+            max_history: 5,
+        }];
+
+        set_tests(test_cases)
+    }
+
+    #[test]
+    fn test_set_history() {
+        let test_cases = vec![
+            TestCase {
+                name: "Test more than max_history values",
+                setup: Box::new(|nm| {
+                    for i in 1..=7 {
+                        nm.set(
+                            "a.b.c.d".to_string(),
+                            &format!("value{}", i).into_bytes(),
+                            Some(SetOptions::new().preserve_history(true)),
+                        );
+                    }
+                }),
+                search_keys: "a.b.c.d".to_string(),
+                expected: vec![
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value7".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value6".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value5".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value4".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value3".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 5,
+            },
+            TestCase {
+                name: "Test less than max_history values",
+                setup: Box::new(|nm| {
+                    for i in 1..=3 {
+                        nm.set(
+                            "a.b.c.d".to_string(),
+                            &format!("value{}", i).into_bytes(),
+                            Some(SetOptions::new().preserve_history(true)),
+                        );
+                    }
+                }),
+                search_keys: "a.b.c.d".to_string(),
+                expected: vec![
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value3".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value2".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value1".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 5,
+            },
+            TestCase {
+                name: "Test exactly max_history values",
+                setup: Box::new(|nm| {
+                    for i in 1..=5 {
+                        nm.set(
+                            "a.b.c.d".to_string(),
+                            &format!("value{}", i).into_bytes(),
+                            Some(SetOptions::new().preserve_history(true)),
+                        );
+                    }
+                }),
+                search_keys: "a.b.c.d".to_string(),
+                expected: vec![
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value5".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value4".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value3".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value2".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.b.c.d".to_string(),
+                        value: b"value1".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 5,
+            },
+        ];
+
+        set_tests(test_cases)
+    }
+
+    #[test]
+    fn test_set_mixed_history() {
+        let test_cases = vec![TestCase {
+            name: "Test more than max_history values",
+            setup: Box::new(|nm| {
+                nm.set(
+                    "a.b.c.d".to_string(),
+                    b"value1",
+                    Some(SetOptions::new().preserve_history(true)),
+                );
+                nm.set(
+                    "a.b.c.d".to_string(),
+                    b"value2",
+                    Some(SetOptions::new().preserve_history(true)),
+                );
+                nm.set(
+                    "a.b.c.d".to_string(),
+                    b"value3",
+                    Some(SetOptions::new().preserve_history(true)),
+                );
+                nm.set(
+                    "a.b.c.d".to_string(),
+                    b"value4",
+                    Some(SetOptions::new().preserve_history(false)),
+                );
+                nm.set(
+                    "a.b.c.d".to_string(),
+                    b"value5",
+                    Some(SetOptions::new().preserve_history(true)),
+                );
+            }),
+            search_keys: "a.b.c.d".to_string(),
+            expected: vec![
+                Item {
+                    key: "a.b.c.d".to_string(),
+                    value: b"value5".to_vec(),
+                    timestamp: SystemTime::now(),
+                },
+                Item {
+                    key: "a.b.c.d".to_string(),
+                    value: b"value4".to_vec(),
+                    timestamp: SystemTime::now(),
+                },
+                Item {
+                    key: "a.b.c.d".to_string(),
+                    value: b"value2".to_vec(),
+                    timestamp: SystemTime::now(),
+                },
+                Item {
+                    key: "a.b.c.d".to_string(),
+                    value: b"value1".to_vec(),
+                    timestamp: SystemTime::now(),
+                },
+            ],
+            max_history: 5,
+        }];
+
+        set_tests(test_cases)
+    }
 
     fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
 
-            if let Some(item) = nm.get(test.search_keys) {
-                assert_eq!(items_equal(item, &test.expected[0]), true);
+            let results = nm.query(
+                test.search_keys,
+                Some(GetOptions::new().history_count(test.max_history)),
+            );
+            assert_eq!(results.len(), test.expected.len());
+            for (i, v) in results.iter().enumerate() {
+                assert_eq!(items_equal(&v, &test.expected[i]), true);
             }
         }
     }
