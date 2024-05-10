@@ -173,6 +173,248 @@ mod tests {
                 ],
                 max_history: 1,
             },
+            TestCase {
+                name: "Test prefix and wildcard match",
+                setup: Box::new(|nm| {
+                    nm.set("a.b.c".to_string(), b"prefix value abc", None);
+                    nm.set("a.c.x".to_string(), b"prefix value acx", None);
+                    nm.set("a.d.y".to_string(), b"prefix value ady", None);
+                    nm.set("a.e.y.z".to_string(), b"prefix value aeyz", None);
+                    nm.set("a.f.y.z.z".to_string(), b"prefix value afyzz", None);
+                }),
+                search_keys: "a.*.y.>".to_string(),
+                expected: vec![
+                    Item {
+                        key: "a.e.y.z".to_string(),
+                        value: b"prefix value aeyz".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "a.f.y.z.z".to_string(),
+                        value: b"prefix value afyzz".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 1,
+            },
+            TestCase {
+                name: "Test prefix match #2",
+                setup: Box::new(|nm| {
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.management0.oper-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet1.oper-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet2.oper-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.management0.admin-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet1.admin-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet2.admin-status".to_string(),
+                        b"up",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.management0.ifindex".to_string(),
+                        b"999999",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet1.ifindex".to_string(),
+                        b"1",
+                        None,
+                    );
+                    nm.set(
+                        "interface.lab1.p01.rk01.esr1a.ethernet2.ifindex".to_string(),
+                        b"2",
+                        None,
+                    );
+                }),
+                search_keys: "interface.lab1.p01.rk01.esr1a.management0.>".to_string(),
+                expected: vec![
+                    Item {
+                        key: "interface.lab1.p01.rk01.esr1a.management0.oper-status".to_string(),
+                        value: b"up".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "interface.lab1.p01.rk01.esr1a.management0.admin-status".to_string(),
+                        value: b"up".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                    Item {
+                        key: "interface.lab1.p01.rk01.esr1a.management0.ifindex".to_string(),
+                        value: b"999999".to_vec(),
+                        timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 1,
+            },
+            TestCase {
+                name: "Test prefix match #3",
+                setup: Box::new(|nm| {
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.session-state"
+                            .to_string(),
+                        b"established",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-state"
+                            .to_string(),
+                        b"established",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.local-as"
+                            .to_string(),
+                        b"65000",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-as"
+                            .to_string(),
+                        b"65000",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-description"
+                            .to_string(),
+                        b"esr1b",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-type"
+                            .to_string(),
+                        b"internal",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-group"
+                            .to_string(),
+                        b"default",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.session-state"
+                            .to_string(),
+                        b"established",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-state"
+                            .to_string(),
+                        b"established",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.local-as"
+                            .to_string(),
+                        b"65000",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-as"
+                            .to_string(),
+                        b"65000",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-description"
+                            .to_string(),
+                        b"esr1b",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-type"
+                            .to_string(),
+                        b"internal",
+                        None,
+                    );
+                    nm.set(
+                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-group"
+                            .to_string(),
+                        b"default",
+                        None,
+                    );
+                }),
+                search_keys: "bgp.neighbor.lab1.p01.rk01.*.*.peer-ip.*.*".to_string(),
+                expected: vec![
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.session-state".to_string(),
+                           value: b"established".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-state".to_string(),
+                           value: b"established".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.local-as".to_string(),
+                           value: b"65000".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-as".to_string(),
+                           value: b"65000".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-description".to_string(),
+                           value: b"esr1b".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-type".to_string(),
+                           value: b"internal".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-group".to_string(),
+                           value: b"default".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.session-state".to_string(),
+                           value: b"established".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-state".to_string(),
+                           value: b"established".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.local-as".to_string(),
+                           value: b"65000".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-as".to_string(),
+                           value: b"65000".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-description".to_string(),
+                           value: b"esr1b".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-type".to_string(),
+                           value: b"internal".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                    Item { key: "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-group".to_string(),
+                           value: b"default".to_vec(),
+                           timestamp: SystemTime::now(),
+                    },
+                ],
+                max_history: 1,
+            },
         ];
 
         query_tests(test_cases)
