@@ -29,8 +29,10 @@ impl NestedMap {
                 timestamp: SystemTime::now(),
             };
 
+            let length: usize = items.len();
+
             if options.preserve_history == false {
-                if items.len() > 0 {
+                if length > 0 {
                     items[0] = new_item;
                 } else {
                     items.insert(0, new_item);
@@ -40,7 +42,7 @@ impl NestedMap {
             }
 
             // Prepend new item to the list to keep the newest items at the start
-            if items.len() >= self.max_history {
+            if length >= self.max_history {
                 items.pop_back(); // Remove the oldest item if we exceed the max history
             }
             items.push_front(new_item); // Insert new item at the start of the list
