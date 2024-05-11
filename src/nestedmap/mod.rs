@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::time::SystemTime;
 
 pub mod config;
@@ -18,7 +19,7 @@ pub struct NestedMap {
 #[derive(PartialEq, Debug)]
 pub enum NestedValue {
     Map(NestedMap),
-    Items(Vec<Item>),
+    Items(VecDeque<Item>),
 }
 
 #[derive(PartialEq, Debug, Clone)]

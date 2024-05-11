@@ -15,7 +15,7 @@ impl NestedMap {
 
         // Try to retrieve items at the VALUE_KEY in the final map
         if let Some(NestedValue::Items(items)) = current_map.get(VALUE_KEY) {
-            items.first() // Return the first item if available
+            items.front() // Return the first item if available
         } else {
             None
         }

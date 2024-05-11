@@ -1,6 +1,7 @@
 use super::config::*;
 use super::options::SetOptions;
 use super::{Item, NestedMap, NestedValue};
+use std::collections::VecDeque;
 use std::time::SystemTime;
 
 impl NestedMap {
@@ -19,7 +20,7 @@ impl NestedMap {
         // Access or create the items list at the final key under VALUE_KEY
         let items = current_map
             .entry(VALUE_KEY.to_string())
-            .or_insert_with(|| NestedValue::Items(Vec::new()));
+            .or_insert_with(|| NestedValue::Items(VecDeque::new()));
 
         if let NestedValue::Items(items) = items {
             let new_item = Item {
@@ -40,9 +41,9 @@ impl NestedMap {
 
             // Prepend new item to the list to keep the newest items at the start
             if items.len() >= self.max_history {
-                items.pop(); // Remove the oldest item if we exceed the max history
+                items.pop_back(); // Remove the oldest item if we exceed the max history
             }
-            items.insert(0, new_item); // Insert new item at the start of the list
+            items.push_front(new_item); // Insert new item at the start of the list
         }
     }
 }

@@ -20,8 +20,7 @@ impl NestedMap {
         if keys.is_empty() {
             // Collect items at the current level using VALUE_KEY
             if let Some(NestedValue::Items(items)) = current.data.get(VALUE_KEY) {
-                let count = std::cmp::min(items.len(), history_max);
-                results.extend_from_slice(&items[..count]);
+                results.extend(items.iter().take(history_max).cloned());
             }
             return;
         }
@@ -36,8 +35,7 @@ impl NestedMap {
                 for (key, value) in &current.data {
                     if key == VALUE_KEY {
                         if let NestedValue::Items(items) = value {
-                            let count = std::cmp::min(items.len(), history_max);
-                            results.extend_from_slice(&items[..count]);
+                            results.extend(items.iter().take(history_max).cloned());
                         }
                     } else if let NestedValue::Map(nested_map) = value {
                         // Recurse into every nested map when "*" is encountered
@@ -58,8 +56,7 @@ impl NestedMap {
                     if remaining_keys.is_empty() {
                         // Check for VALUE_KEY in the last map
                         if let Some(NestedValue::Items(items)) = nested_map.data.get(VALUE_KEY) {
-                            let count = std::cmp::min(items.len(), history_max);
-                            results.extend_from_slice(&items[..count]);
+                            results.extend(items.iter().take(history_max).cloned());
                         }
                     } else {
                         self.query_recursive(
@@ -84,8 +81,7 @@ impl NestedMap {
         // Only collect items if not skipping the current level
         if !skip_current_level {
             if let Some(NestedValue::Items(items)) = current.data.get(VALUE_KEY) {
-                let count = std::cmp::min(items.len(), history_max);
-                results.extend_from_slice(&items[..count]);
+                results.extend(items.iter().take(history_max).cloned());
             }
         }
 
