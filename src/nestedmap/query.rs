@@ -3,7 +3,7 @@ use super::options::GetOptions;
 use super::{Item, NestedMap, NestedValue};
 
 impl NestedMap {
-    pub fn query(&self, keys: String, options: Option<GetOptions>) -> Vec<Item> {
+    pub fn query(&self, keys: &str, options: Option<GetOptions>) -> Vec<Item> {
         let options = options.unwrap_or_default();
         let mut results = Vec::new();
         self.query_recursive(keys, self, &mut results, options.history_count);
@@ -12,7 +12,7 @@ impl NestedMap {
 
     fn query_recursive(
         &self,
-        keys: String,
+        keys: &str,
         current: &NestedMap,
         results: &mut Vec<Item>,
         history_max: usize,
@@ -42,7 +42,7 @@ impl NestedMap {
                     } else if let NestedValue::Map(nested_map) = value {
                         // Recurse into every nested map when "*" is encountered
                         self.query_recursive(
-                            remaining_keys.to_string(),
+                            &remaining_keys.to_string(),
                             nested_map,
                             results,
                             history_max,
@@ -63,7 +63,7 @@ impl NestedMap {
                         }
                     } else {
                         self.query_recursive(
-                            remaining_keys.to_string(),
+                            &remaining_keys.to_string(),
                             nested_map,
                             results,
                             history_max,
@@ -111,7 +111,7 @@ mod tests {
             TestCase {
                 name: "Test exact match",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"exact value", None);
+                    nm.set(&"a.b.c".to_string(), b"exact value", None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![Item {
@@ -124,10 +124,10 @@ mod tests {
             TestCase {
                 name: "Test wildcard match",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"wildcard value abc", None);
-                    nm.set("a.b.x".to_string(), b"wildcard value abx", None);
-                    nm.set("a.b.y".to_string(), b"wildcard value aby", None);
-                    nm.set("a.b.z.z".to_string(), b"wildcard value abzz", None);
+                    nm.set(&"a.b.c".to_string(), b"wildcard value abc", None);
+                    nm.set(&"a.b.x".to_string(), b"wildcard value abx", None);
+                    nm.set(&"a.b.y".to_string(), b"wildcard value aby", None);
+                    nm.set(&"a.b.z.z".to_string(), b"wildcard value abzz", None);
                 }),
                 search_keys: "a.b.*".to_string(),
                 expected: vec![
@@ -152,11 +152,11 @@ mod tests {
             TestCase {
                 name: "Test prefix match",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"prefix value abc", None);
-                    nm.set("a.b.x".to_string(), b"prefix value abx", None);
-                    nm.set("a.b.y".to_string(), b"prefix value aby", None);
-                    nm.set("a.b.y.z".to_string(), b"prefix value abyz", None);
-                    nm.set("a.b.y.z.z".to_string(), b"prefix value abyzz", None);
+                    nm.set(&"a.b.c".to_string(), b"prefix value abc", None);
+                    nm.set(&"a.b.x".to_string(), b"prefix value abx", None);
+                    nm.set(&"a.b.y".to_string(), b"prefix value aby", None);
+                    nm.set(&"a.b.y.z".to_string(), b"prefix value abyz", None);
+                    nm.set(&"a.b.y.z.z".to_string(), b"prefix value abyzz", None);
                 }),
                 search_keys: "a.b.y.>".to_string(),
                 expected: vec![
@@ -176,11 +176,11 @@ mod tests {
             TestCase {
                 name: "Test prefix and wildcard match",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"prefix value abc", None);
-                    nm.set("a.c.x".to_string(), b"prefix value acx", None);
-                    nm.set("a.d.y".to_string(), b"prefix value ady", None);
-                    nm.set("a.e.y.z".to_string(), b"prefix value aeyz", None);
-                    nm.set("a.f.y.z.z".to_string(), b"prefix value afyzz", None);
+                    nm.set(&"a.b.c".to_string(), b"prefix value abc", None);
+                    nm.set(&"a.c.x".to_string(), b"prefix value acx", None);
+                    nm.set(&"a.d.y".to_string(), b"prefix value ady", None);
+                    nm.set(&"a.e.y.z".to_string(), b"prefix value aeyz", None);
+                    nm.set(&"a.f.y.z.z".to_string(), b"prefix value afyzz", None);
                 }),
                 search_keys: "a.*.y.>".to_string(),
                 expected: vec![
@@ -201,47 +201,47 @@ mod tests {
                 name: "Test prefix match #2",
                 setup: Box::new(|nm| {
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.management0.oper-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.management0.oper-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet1.oper-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet1.oper-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet2.oper-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet2.oper-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.management0.admin-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.management0.admin-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet1.admin-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet1.admin-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet2.admin-status".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet2.admin-status".to_string(),
                         b"up",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.management0.ifindex".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.management0.ifindex".to_string(),
                         b"999999",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet1.ifindex".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet1.ifindex".to_string(),
                         b"1",
                         None,
                     );
                     nm.set(
-                        "interface.lab1.p01.rk01.esr1a.ethernet2.ifindex".to_string(),
+                        &"interface.lab1.p01.rk01.esr1a.ethernet2.ifindex".to_string(),
                         b"2",
                         None,
                     );
@@ -270,85 +270,85 @@ mod tests {
                 name: "Test prefix match #3",
                 setup: Box::new(|nm| {
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.session-state"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.session-state"
                             .to_string(),
                         b"established",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-state"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-state"
                             .to_string(),
                         b"established",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.local-as"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.local-as"
                             .to_string(),
                         b"65000",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-as"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-as"
                             .to_string(),
                         b"65000",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-description"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-description"
                             .to_string(),
                         b"esr1b",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-type"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-type"
                             .to_string(),
                         b"internal",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-group"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1b.default.peer-ip.1_1_1_1.peer-group"
                             .to_string(),
                         b"default",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.session-state"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.session-state"
                             .to_string(),
                         b"established",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-state"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-state"
                             .to_string(),
                         b"established",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.local-as"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.local-as"
                             .to_string(),
                         b"65000",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-as"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-as"
                             .to_string(),
                         b"65000",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-description"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-description"
                             .to_string(),
                         b"esr1b",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-type"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-type"
                             .to_string(),
                         b"internal",
                         None,
                     );
                     nm.set(
-                        "bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-group"
+                        &"bgp.neighbor.lab1.p01.rk01.esr1a.default.peer-ip.1_1_1_2.peer-group"
                             .to_string(),
                         b"default",
                         None,
@@ -425,7 +425,7 @@ mod tests {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
             let results = nm.query(
-                test.search_keys,
+                &test.search_keys,
                 Some(GetOptions::new().history_count(test.max_history)),
             );
             assert_eq!(

@@ -4,7 +4,7 @@ use super::{Item, NestedMap, NestedValue};
 use std::time::SystemTime;
 
 impl NestedMap {
-    pub fn set(&mut self, keys: String, value: &[u8], options: Option<SetOptions>) {
+    pub fn set(&mut self, keys: &str, value: &[u8], options: Option<SetOptions>) {
         let options = options.unwrap_or_default();
         let mut current_map = &mut self.data;
 
@@ -23,7 +23,7 @@ impl NestedMap {
 
         if let NestedValue::Items(items) = items {
             let new_item = Item {
-                key: keys,
+                key: keys.to_string(),
                 value: value.to_vec(),
                 timestamp: SystemTime::now(),
             };
@@ -62,7 +62,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a".to_string(), b"the value a", None);
+                    nm.set(&"a".to_string(), b"the value a", None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![Item {
@@ -75,7 +75,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"the value abc", None);
+                    nm.set(&"a.b.c".to_string(), b"the value abc", None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![Item {
@@ -88,7 +88,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c.d.e.f".to_string(), b"the value abcdef", None);
+                    nm.set(&"a.b.c.d.e.f".to_string(), b"the value abcdef", None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![Item {
@@ -110,7 +110,7 @@ mod tests {
             setup: Box::new(|nm| {
                 for i in 1..=7 {
                     nm.set(
-                        "a.b.c.d".to_string(),
+                        &"a.b.c.d".to_string(),
                         &format!("value{}", i).into_bytes(),
                         Some(SetOptions::new().preserve_history(false)),
                     );
@@ -136,7 +136,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=7 {
                         nm.set(
-                            "a.b.c.d".to_string(),
+                            &"a.b.c.d".to_string(),
                             &format!("value{}", i).into_bytes(),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -177,7 +177,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=3 {
                         nm.set(
-                            "a.b.c.d".to_string(),
+                            &"a.b.c.d".to_string(),
                             &format!("value{}", i).into_bytes(),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -208,7 +208,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=5 {
                         nm.set(
-                            "a.b.c.d".to_string(),
+                            &"a.b.c.d".to_string(),
                             &format!("value{}", i).into_bytes(),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -255,27 +255,27 @@ mod tests {
             name: "Test more than max_history values",
             setup: Box::new(|nm| {
                 nm.set(
-                    "a.b.c.d".to_string(),
+                    &"a.b.c.d".to_string(),
                     b"value1",
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d".to_string(),
+                    &"a.b.c.d".to_string(),
                     b"value2",
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d".to_string(),
+                    &"a.b.c.d".to_string(),
                     b"value3",
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d".to_string(),
+                    &"a.b.c.d".to_string(),
                     b"value4",
                     Some(SetOptions::new().preserve_history(false)),
                 );
                 nm.set(
-                    "a.b.c.d".to_string(),
+                    &"a.b.c.d".to_string(),
                     b"value5",
                     Some(SetOptions::new().preserve_history(true)),
                 );
@@ -315,7 +315,7 @@ mod tests {
             (test.setup)(&mut nm);
 
             let results = nm.query(
-                test.search_keys,
+                &test.search_keys,
                 Some(GetOptions::new().history_count(test.max_history)),
             );
             assert_eq!(results.len(), test.expected.len());

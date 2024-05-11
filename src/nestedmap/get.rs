@@ -2,7 +2,7 @@ use super::config::*;
 use super::*;
 
 impl NestedMap {
-    pub fn get(&self, keys: String) -> Option<&Item> {
+    pub fn get(&self, keys: &str) -> Option<&Item> {
         let mut current_map = &self.data;
 
         for key in keys.split(DELIMITER) {
@@ -36,7 +36,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a".to_string(), b"the value a", None);
+                    nm.set(&"a".to_string(), b"the value a", None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![Item {
@@ -49,7 +49,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c".to_string(), b"the value abc", None);
+                    nm.set(&"a.b.c".to_string(), b"the value abc", None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![Item {
@@ -62,7 +62,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c.d.e.f".to_string(), b"the value abcdef", None);
+                    nm.set(&"a.b.c.d.e.f".to_string(), b"the value abcdef", None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![Item {
@@ -82,7 +82,7 @@ mod tests {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
 
-            if let Some(item) = nm.get(test.search_keys) {
+            if let Some(item) = nm.get(&test.search_keys) {
                 assert_eq!(items_equal(item, &test.expected[0]), true);
             }
         }
