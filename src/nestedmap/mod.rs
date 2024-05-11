@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::time::SystemTime;
@@ -12,7 +13,7 @@ pub mod test_helpers;
 
 #[derive(PartialEq, Debug)]
 pub struct NestedMap {
-    data: HashMap<String, NestedValue>,
+    data: BTreeMap<String, NestedValue>,
     max_history: usize,
 }
 
@@ -33,7 +34,7 @@ pub struct Item {
 impl NestedMap {
     pub fn new(max_history: usize) -> Self {
         NestedMap {
-            data: HashMap::new(),
+            data: BTreeMap::new(),
             max_history,
         }
     }
@@ -41,7 +42,7 @@ impl NestedMap {
 
 // Helper function to get mutable reference to nested map if the variant is Map
 impl NestedValue {
-    pub fn as_map_mut(&mut self) -> &mut HashMap<String, NestedValue> {
+    pub fn as_map_mut(&mut self) -> &mut BTreeMap<String, NestedValue> {
         match self {
             NestedValue::Map(map) => &mut map.data,
             _ => panic!("Expected NestedValue to be Map"),
