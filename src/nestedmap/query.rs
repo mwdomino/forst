@@ -6,13 +6,14 @@ impl NestedMap {
     pub fn query(&self, keys: &str, options: Option<GetOptions>) -> Vec<Item> {
         let options = options.unwrap_or_default();
         let mut results = Vec::new();
-        self.query_recursive(keys, self, &mut results, options.history_count);
+        let keys: Vec<&str> = keys.split(DELIMITER).collect();
+        self.query_recursive(&keys, self, &mut results, options.history_count);
         results
     }
 
-    fn query_recursive(
+    fn query_recursive<'a>(
         &self,
-        keys: &str,
+        keys: &[&'a str],
         current: &NestedMap,
         results: &mut Vec<Item>,
         history_max: usize,
@@ -25,9 +26,8 @@ impl NestedMap {
             return;
         }
 
-        let ikeys: Vec<&str> = keys.split(DELIMITER).collect();
-        let next_key = ikeys[0];
-        let remaining_keys = &ikeys[1..].join(DELIMITER);
+        let next_key = keys[0];
+        let remaining_keys = &keys[1..];
 
         match next_key {
             WILDCARD => {
@@ -39,12 +39,7 @@ impl NestedMap {
                         }
                     } else if let NestedValue::Map(nested_map) = value {
                         // Recurse into every nested map when "*" is encountered
-                        self.query_recursive(
-                            &remaining_keys.to_string(),
-                            nested_map,
-                            results,
-                            history_max,
-                        );
+                        self.query_recursive(&remaining_keys, nested_map, results, history_max);
                     }
                 }
             }
@@ -59,12 +54,7 @@ impl NestedMap {
                             results.extend(items.iter().take(history_max).cloned());
                         }
                     } else {
-                        self.query_recursive(
-                            &remaining_keys.to_string(),
-                            nested_map,
-                            results,
-                            history_max,
-                        );
+                        self.query_recursive(&remaining_keys, nested_map, results, history_max);
                     }
                 }
             }
