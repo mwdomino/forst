@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 
 pub mod config;
+//pub mod delete;
 pub mod get;
 pub mod options;
 pub mod query;

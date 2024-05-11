@@ -4,11 +4,11 @@ use rs_datastore::nestedmap::{Item, NestedMap}; // Import your NestedMap module
 fn bench_get(c: &mut Criterion) {
     let mut nm = NestedMap::new(1);
 
-    nm.set("a.b.c".to_string(), b"some value a", None);
+    nm.set("a.b.c.d.e".to_string(), b"some value a", None);
 
     c.bench_function("get_key", |b| {
         b.iter(|| {
-            let _ = nm.get("a.b.c".to_string());
+            let _ = nm.get("a.b.c.d.e".to_string());
         });
     });
 }
