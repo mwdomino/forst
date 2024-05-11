@@ -7,7 +7,7 @@ fn bench_get(c: &mut Criterion) {
 
     nm.set(&"a.b.c.d.e".to_string(), b"some value a", None);
 
-    c.bench_function("get_key", |b| {
+    c.bench_function("get_key a.b.c.d.e", |b| {
         b.iter(|| {
             let _ = nm.get(&"a.b.c.d.e".to_string());
         });
@@ -17,7 +17,7 @@ fn bench_get(c: &mut Criterion) {
 fn bench_set(c: &mut Criterion) {
     let mut nm = NestedMap::new(5);
 
-    c.bench_function("set_key", |b| {
+    c.bench_function("set_key a.b.c.d.e", |b| {
         b.iter(|| {
             nm.set(
                 &"a.b.c.d.e".to_string(),
@@ -28,5 +28,176 @@ fn bench_set(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_get, bench_set);
+fn bench_query_direct(c: &mut Criterion) {
+    let mut nm = NestedMap::new(5);
+    seed_queries(&mut nm);
+
+    c.bench_function("query exact a.b.c", |b| {
+        b.iter(|| {
+            nm.query(&"a.b.c".to_string(), None);
+        });
+    });
+}
+
+fn bench_query_wildcard(c: &mut Criterion) {
+    let mut nm = NestedMap::new(5);
+    seed_queries(&mut nm);
+
+    c.bench_function("query wildcard a.b.*", |b| {
+        b.iter(|| {
+            nm.query(&"a.b.*".to_string(), None);
+        });
+    });
+}
+
+fn bench_query_prefix(c: &mut Criterion) {
+    let mut nm = NestedMap::new(5);
+    seed_queries(&mut nm);
+
+    c.bench_function("query prefix a.b.y.>", |b| {
+        b.iter(|| {
+            nm.query(&"a.b.y.>".to_string(), None);
+        });
+    });
+}
+
+fn bench_query_interface(c: &mut Criterion) {
+    let mut nm = NestedMap::new(5);
+    seed_queries(&mut nm);
+
+    c.bench_function(
+        "query interface interface.lab1.p01.rk01.esr1a.management0.>",
+        |b| {
+            b.iter(|| {
+                nm.query(
+                    &"interface.lab1.p01.rk01.esr1a.management0.>".to_string(),
+                    None,
+                );
+            });
+        },
+    );
+}
+
+fn seed_queries(nm: &mut NestedMap) {
+    // wildcards
+    nm.set(&"a.b.c".to_string(), b"wildcard value abc", None);
+    nm.set(&"a.b.x".to_string(), b"wildcard value abx", None);
+    nm.set(&"a.b.y".to_string(), b"wildcard value aby", None);
+    nm.set(&"a.b.z.z".to_string(), b"wildcard value abzz", None);
+
+    // prefix
+    nm.set(&"a.b.c".to_string(), b"prefix value abc", None);
+    nm.set(&"a.b.x".to_string(), b"prefix value abx", None);
+    nm.set(&"a.b.y".to_string(), b"prefix value aby", None);
+    nm.set(&"a.b.y.z".to_string(), b"prefix value abyz", None);
+    nm.set(&"a.b.y.z.z".to_string(), b"prefix value abyzz", None);
+
+    // deep
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.management0.oper-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet1.oper-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet2.oper-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.management0.admin-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet1.admin-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet2.admin-status".to_string(),
+        b"up",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.management0.ifindex".to_string(),
+        b"999999",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet1.ifindex".to_string(),
+        b"1",
+        None,
+    );
+    nm.set(
+        &"interface.lab1.p01.rk01.esr1a.ethernet2.ifindex".to_string(),
+        b"2",
+        None,
+    );
+
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e.f".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e.f".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+    nm.set(
+        &"a.b.c.d.e".to_string(),
+        b"some value a",
+        Some(SetOptions::new().preserve_history(true)),
+    );
+}
+
+criterion_group!(
+    benches,
+    bench_get,
+    bench_set,
+    bench_query_direct,
+    bench_query_wildcard,
+    bench_query_prefix,
+    bench_query_interface
+);
 criterion_main!(benches);
