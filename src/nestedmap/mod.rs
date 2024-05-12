@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::time::SystemTime;
 
 pub mod config;
-//pub mod delete;
+pub mod delete;
 pub mod get;
 pub mod options;
 pub mod query;
