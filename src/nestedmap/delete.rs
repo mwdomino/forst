@@ -124,16 +124,8 @@ mod tests {
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![
-                    Item {
-                        key: "a.b.c.d".to_string(),
-                        value: b"the value abcd".to_vec(),
-                        timestamp: SystemTime::now(),
-                    },
-                    Item {
-                        key: "a.b.c".to_string(),
-                        value: b"the value abc".to_vec(),
-                        timestamp: SystemTime::now(),
-                    },
+                    create_item("a.b.c.d", b"the value abcd"),
+                    create_item("a.b.c", b"the value abc"),
                 ],
                 max_history: 1,
             },
@@ -149,11 +141,7 @@ mod tests {
                     nm.set(&"a.b.c.d.e.f.g".to_string(), b"the value abcdefg", None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
-                expected: vec![Item {
-                    key: "a.b.c.d.e.f.g".to_string(),
-                    value: b"the value abcdefg".to_vec(),
-                    timestamp: SystemTime::now(),
-                }],
+                expected: vec![create_item("a.b.c.d.e.f.g", b"the value abcdefg")],
                 max_history: 1,
             },
         ];
