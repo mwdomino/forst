@@ -33,13 +33,11 @@ impl NestedMap {
             WILDCARD => {
                 // Iterate through all entries in the current map
                 for (key, value) in &current.data {
-                    if key == VALUE_KEY {
-                        if let NestedValue::Items(items) = value {
-                            results.extend(items.iter().take(history_max).cloned());
+                    if key != VALUE_KEY {
+                        if let NestedValue::Map(nested_map) = value {
+                            // Recurse into every nested map when "*" is encountered
+                            self.query_recursive(&remaining_keys, nested_map, results, history_max);
                         }
-                    } else if let NestedValue::Map(nested_map) = value {
-                        // Recurse into every nested map when "*" is encountered
-                        self.query_recursive(&remaining_keys, nested_map, results, history_max);
                     }
                 }
             }
@@ -106,6 +104,7 @@ mod tests {
             TestCase {
                 name: "Test wildcard match",
                 setup: Box::new(|nm| {
+                    nm.set(&"a.b".to_string(), b"wildcard value ab", None);
                     nm.set(&"a.b.c".to_string(), b"wildcard value abc", None);
                     nm.set(&"a.b.x".to_string(), b"wildcard value abx", None);
                     nm.set(&"a.b.y".to_string(), b"wildcard value aby", None);
