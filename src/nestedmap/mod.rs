@@ -25,7 +25,7 @@ pub enum NestedValue {
 #[derive(PartialEq, Debug, Clone)]
 pub struct Item {
     key: String,
-    value: Vec<u8>,
+    pub value: Vec<u8>,
     timestamp: SystemTime,
     id: i64,
 }

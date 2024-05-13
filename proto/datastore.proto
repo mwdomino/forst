@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package nestedmap;
+
+service Datastore {
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc Set(SetRequest) returns (SetResponse);
+}
+
+message GetRequest {
+    string keys = 1;
+}
+
+message GetResponse {
+    bytes item = 1;
+}
+
+message SetRequest {
+    string keys = 1;
+    bytes value = 2;
+    SetOptions options = 3;
+}
+
+message SetOptions {
+    bool preserve_history = 1;
+    int64 ttl = 2;
+}
+
+message SetResponse {
+    bool success = 1;
+}
+
