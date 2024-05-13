@@ -4,10 +4,10 @@ use std::time::Duration;
 use tokio;
 use tonic::{transport::Server, Request, Response, Status};
 
-use rs_datastore::nestedmap::{NestedMap};
-use rs_datastore::nestedmap::options::SetOptions;
 use datastore::datastore_server::{Datastore, DatastoreServer};
 use datastore::{GetRequest, GetResponse, SetRequest, SetResponse};
+use rs_datastore::nestedmap::options::SetOptions;
+use rs_datastore::nestedmap::NestedMap;
 
 pub mod datastore {
     tonic::include_proto!("nestedmap");
@@ -33,15 +33,15 @@ impl Datastore for MyDatastore {
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
         let keys = request.into_inner().keys;
-        let map = self.map.lock().unwrap();  // Acquire the lock
+        let map = self.map.lock().unwrap(); // Acquire the lock
 
         match map.get(&keys) {
             Some(item) => {
                 let reply = GetResponse {
-                    item: item.value.clone(),  // Extracting the Vec<u8> directly from Item
+                    item: item.value.clone(), // Extracting the Vec<u8> directly from Item
                 };
                 Ok(tonic::Response::new(reply))
-            },
+            }
             None => Err(tonic::Status::not_found("Key not found")),
         }
     }
@@ -51,7 +51,7 @@ impl Datastore for MyDatastore {
         request: tonic::Request<SetRequest>,
     ) -> Result<tonic::Response<SetResponse>, tonic::Status> {
         let req = request.into_inner();
-        let mut map = self.map.lock().unwrap();  // Acquire the lock for mutable access
+        let mut map = self.map.lock().unwrap(); // Acquire the lock for mutable access
 
         let options = req.options.map(|opts| SetOptions {
             preserve_history: opts.preserve_history,
@@ -60,9 +60,7 @@ impl Datastore for MyDatastore {
 
         map.set(&req.keys, &req.value, options);
 
-        let reply = SetResponse {
-            success: true,
-        };
+        let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
     }
 }
@@ -79,4 +77,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
