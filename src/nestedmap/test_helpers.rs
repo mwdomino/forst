@@ -14,12 +14,12 @@ pub struct TestCase {
 
 // create_item returns an item with a static ID suitable for testing only
 pub fn create_item(key: &str, value: &[u8]) -> Item {
-    return Item {
+    Item {
         key: key.to_string(),
         value: value.to_vec(),
         timestamp: SystemTime::now(),
         id: 1,
-    };
+    }
 }
 
 #[macro_export]

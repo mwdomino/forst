@@ -1,8 +1,6 @@
 use std::sync::Mutex;
-use std::time::Duration;
 
-use tokio;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore, DatastoreServer};
 use datastore::{GetRequest, GetResponse, SetRequest, SetResponse, QueryRequest, QueryResponse};

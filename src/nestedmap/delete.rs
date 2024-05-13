@@ -9,11 +9,7 @@ impl NestedMap {
         for (i, key) in keys.iter().enumerate() {
             if i == keys.len() - 1 {
                 // Last key, attempt to delete
-                if current_map.remove(*key).is_some() {
-                    return true;
-                } else {
-                    return false;
-                }
+                return current_map.remove(*key).is_some();
             }
 
             // Not the last key, dive deeper
@@ -67,13 +63,11 @@ impl NestedMap {
 }
 
 mod tests {
-    use self::options::GetOptions;
-    use self::options::SetOptions;
+    #[allow(unused_imports)]
+    use self::options::{GetOptions, SetOptions};
 
     use super::*;
     use crate::nestedmap::test_helpers::*;
-    use crate::vec_string;
-    use std::time::SystemTime;
 
     #[test]
     fn test_delete() {
@@ -81,7 +75,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set(&"a".to_string(), b"the value a", None);
+                    nm.set("a", b"the value a", None);
                 }),
                 search_keys: "a".to_string(),
                 expected: Vec::new(),
@@ -90,7 +84,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set(&"a.b.c".to_string(), b"the value abc", None);
+                    nm.set("a.b.c", b"the value abc", None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: Vec::new(),
@@ -99,7 +93,7 @@ mod tests {
             TestCase {
                 name: "Test depth 5",
                 setup: Box::new(|nm| {
-                    nm.set(&"a.b.c.d.e".to_string(), b"the value abcde", None);
+                    nm.set("a.b.c.d.e", b"the value abcde", None);
                 }),
                 search_keys: "a.b.c.d.e".to_string(),
                 expected: Vec::new(),
@@ -116,11 +110,11 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set(&"a".to_string(), b"the value a", None);
-                    nm.set(&"a.b".to_string(), b"the value ab", None);
-                    nm.set(&"a.b.c".to_string(), b"the value abc", None);
-                    nm.set(&"a.b.c.d".to_string(), b"the value abcd", None);
-                    nm.set(&"a.b.c.d.e".to_string(), b"the value abcde", None);
+                    nm.set("a", b"the value a", None);
+                    nm.set("a.b", b"the value ab", None);
+                    nm.set("a.b.c", b"the value abc", None);
+                    nm.set("a.b.c.d", b"the value abcd", None);
+                    nm.set("a.b.c.d.e", b"the value abcde", None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![
@@ -132,13 +126,13 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(&"a".to_string(), b"the value a", None);
-                    nm.set(&"a.b".to_string(), b"the value ab", None);
-                    nm.set(&"a.b.c".to_string(), b"the value abc", None);
-                    nm.set(&"a.b.c.d".to_string(), b"the value abcd", None);
-                    nm.set(&"a.b.c.d.e".to_string(), b"the value abcde", None);
-                    nm.set(&"a.b.c.d.e.f".to_string(), b"the value abcdef", None);
-                    nm.set(&"a.b.c.d.e.f.g".to_string(), b"the value abcdefg", None);
+                    nm.set("a", b"the value a", None);
+                    nm.set("a.b", b"the value ab", None);
+                    nm.set("a.b.c", b"the value abc", None);
+                    nm.set("a.b.c.d", b"the value abcd", None);
+                    nm.set("a.b.c.d.e", b"the value abcde", None);
+                    nm.set("a.b.c.d.e.f", b"the value abcdef", None);
+                    nm.set("a.b.c.d.e.f.g", b"the value abcdefg", None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f.g", b"the value abcdefg")],
@@ -154,26 +148,26 @@ mod tests {
         let mut nm = NestedMap::new(3);
 
         nm.set(
-            &"a.b.c".to_string(),
+            "a.b.c",
             b"value1",
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
-            &"a.b.c".to_string(),
+            "a.b.c",
             b"value2",
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
-            &"a.b.c".to_string(),
+            "a.b.c",
             b"value3",
             Some(SetOptions::new().preserve_history(true)),
         );
 
         // delete index 2
-        let r: bool = nm.delete_at_index(&"a.b.c", 2);
-        assert_eq!(r, true);
+        let r: bool = nm.delete_at_index("a.b.c", 2);
+        assert!(r);
 
-        let items: Vec<Item> = nm.query(&"a.b.c", Some(GetOptions::new().history_count(3)));
+        let items: Vec<Item> = nm.query("a.b.c", Some(GetOptions::new().history_count(3)));
         assert_eq!(items.len(), 2);
 
         assert_eq!(items[0].value, b"value3");
@@ -185,16 +179,16 @@ mod tests {
         let mut nm = NestedMap::new(3);
 
         nm.set(
-            &"a.b.c".to_string(),
+            "a.b.c",
             b"value1",
             Some(SetOptions::new().preserve_history(true)),
         );
 
         // delete index 0
-        let r: bool = nm.delete_at_index(&"a.b.c", 0);
-        assert_eq!(r, true);
+        let r: bool = nm.delete_at_index("a.b.c", 0);
+        assert!(r);
 
-        let items: Vec<Item> = nm.query(&"a.b.c", Some(GetOptions::new().history_count(3)));
+        let items: Vec<Item> = nm.query("a.b.c", Some(GetOptions::new().history_count(3)));
         assert_eq!(items.len(), 0);
     }
 
@@ -203,8 +197,8 @@ mod tests {
             let mut nm = NestedMap::new(test.max_history);
             (test.setup)(&mut nm);
 
-            let result: bool = nm.delete(&test.search_keys.to_string());
-            assert_eq!(result, true);
+            let result: bool = nm.delete(&test.search_keys);
+            assert!(result);
 
             for exp in test.expected {
                 if let Some(item) = nm.get(&exp.key) {

@@ -1,9 +1,6 @@
 use std::collections::{BTreeMap, BinaryHeap, VecDeque};
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc, Mutex,
-};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::{atomic::AtomicI64, Arc, Mutex};
+use std::time::SystemTime;
 
 pub mod config;
 pub mod delete;
