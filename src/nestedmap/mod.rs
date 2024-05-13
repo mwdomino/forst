@@ -5,6 +5,8 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 pub mod config;
 pub mod delete;
 pub mod get;
@@ -47,12 +49,12 @@ pub enum NestedValue {
     Items(VecDeque<Item>),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
-    key: String,
+    pub key: String,
     pub value: Vec<u8>,
-    timestamp: SystemTime,
-    id: i64,
+    pub timestamp: SystemTime,
+    pub id: i64,
 }
 
 // New

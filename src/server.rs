@@ -5,9 +5,9 @@ use tokio;
 use tonic::{transport::Server, Request, Response, Status};
 
 use datastore::datastore_server::{Datastore, DatastoreServer};
-use datastore::{GetRequest, GetResponse, SetRequest, SetResponse, QueryRequest, QueryResponse};
+use datastore::{GetRequest, GetResponse, QueryRequest, QueryResponse, SetRequest, SetResponse};
 use rs_datastore::nestedmap::options::SetOptions;
-use rs_datastore::nestedmap::{NestedMap,Item};
+use rs_datastore::nestedmap::{Item, NestedMap};
 
 pub mod datastore {
     tonic::include_proto!("nestedmap");
@@ -37,9 +37,15 @@ impl Datastore for MyDatastore {
 
         match map.get(&keys) {
             Some(item) => {
+                // Serialize the item into Vec<u8>
+                let serialized_item = bincode::serialize(item).map_err(|e| {
+                    tonic::Status::internal(format!("Failed to serialize item: {}", e))
+                })?;
+
                 let reply = GetResponse {
-                    item: item.value.clone(), // Extracting the Vec<u8> directly from Item
+                    item: serialized_item,
                 };
+
                 Ok(tonic::Response::new(reply))
             }
             None => Err(tonic::Status::not_found("Key not found")),
@@ -73,15 +79,27 @@ impl Datastore for MyDatastore {
 
         let items: Vec<Item> = map.query(&keys, None); // TODO - support GetOptions
 
-            if items.is_empty() {
-        return Err(tonic::Status::not_found("No items found for the given keys"));
-    }
+        if items.is_empty() {
+            return Err(tonic::Status::not_found(
+                "No items found for the given keys",
+            ));
+        }
 
-    let reply = QueryResponse {
-        items: items.into_iter().map(|item| item.value.clone()).collect(),
-    };
+        // Serialize each Item into Vec<u8>
+        let serialized_items: Vec<Vec<u8>> = items
+            .into_iter()
+            .map(|item| {
+                bincode::serialize(&item).map_err(|e| {
+                    tonic::Status::internal(format!("Failed to serialize item: {}", e))
+                })
+            })
+            .collect::<Result<_, _>>()?; // Collect results and handle potential errors
 
-    Ok(tonic::Response::new(reply))
+        let reply = QueryResponse {
+            items: serialized_items,
+        };
+
+        Ok(tonic::Response::new(reply))
     }
 }
 
