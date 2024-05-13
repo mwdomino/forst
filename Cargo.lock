@@ -949,6 +949,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "prost",
+ "prost-build",
  "rand",
  "tokio",
  "tonic",

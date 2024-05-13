@@ -5,9 +5,9 @@ use tokio;
 use tonic::{transport::Server, Request, Response, Status};
 
 use datastore::datastore_server::{Datastore, DatastoreServer};
-use datastore::{GetRequest, GetResponse, SetRequest, SetResponse};
+use datastore::{GetRequest, GetResponse, SetRequest, SetResponse, QueryRequest, QueryResponse};
 use rs_datastore::nestedmap::options::SetOptions;
-use rs_datastore::nestedmap::NestedMap;
+use rs_datastore::nestedmap::{NestedMap,Item};
 
 pub mod datastore {
     tonic::include_proto!("nestedmap");
@@ -63,11 +63,31 @@ impl Datastore for MyDatastore {
         let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
     }
+
+    async fn query(
+        &self,
+        request: tonic::Request<QueryRequest>,
+    ) -> Result<tonic::Response<QueryResponse>, tonic::Status> {
+        let keys = request.into_inner().keys;
+        let map = self.map.lock().unwrap(); // Acquire the lock
+
+        let items: Vec<Item> = map.query(&keys, None); // TODO - support GetOptions
+
+            if items.is_empty() {
+        return Err(tonic::Status::not_found("No items found for the given keys"));
+    }
+
+    let reply = QueryResponse {
+        items: items.into_iter().map(|item| item.value.clone()).collect(),
+    };
+
+    Ok(tonic::Response::new(reply))
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50051".parse()?;
+    let addr = "127.0.0.1:50051".parse()?;
     let my_datastore = MyDatastore::new(3);
 
     Server::builder()

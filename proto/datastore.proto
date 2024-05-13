@@ -5,6 +5,7 @@ package nestedmap;
 service Datastore {
     rpc Get(GetRequest) returns (GetResponse);
     rpc Set(SetRequest) returns (SetResponse);
+    rpc Query(QueryRequest) returns (QueryResponse);
 }
 
 message GetRequest {
@@ -30,3 +31,10 @@ message SetResponse {
     bool success = 1;
 }
 
+message QueryRequest {
+    string keys = 1;
+}
+
+message QueryResponse {
+    repeated bytes items = 1;
+}
