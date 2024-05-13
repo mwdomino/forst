@@ -211,7 +211,7 @@ mod tests {
                         b"up",
                     ),
                     create_item(
-                        "interface.lab1.p01.rk01.esr1a.management0.ifindex-status",
+                        "interface.lab1.p01.rk01.esr1a.management0.ifindex",
                         b"999999",
                     ),
                 ],
