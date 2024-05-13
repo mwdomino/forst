@@ -1,7 +1,8 @@
 use super::config::*;
 use super::options::SetOptions;
-use super::{Item, NestedMap, NestedValue};
+use super::{ExpirationEntry, Item, NestedMap, NestedValue};
 use std::collections::VecDeque;
+use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
 impl NestedMap {
@@ -23,10 +24,12 @@ impl NestedMap {
             .or_insert_with(|| NestedValue::Items(VecDeque::new()));
 
         if let NestedValue::Items(items) = items {
+            let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
             let new_item = Item {
                 key: keys.to_string(),
                 value: value.to_vec(),
                 timestamp: SystemTime::now(),
+                id: id,
             };
 
             let length: usize = items.len();
@@ -46,6 +49,15 @@ impl NestedMap {
                 items.pop_back(); // Remove the oldest item if we exceed the max history
             }
             items.push_front(new_item); // Insert new item at the start of the list
+
+            let expires_at = SystemTime::now() + options.ttl;
+            let expiration_entry = ExpirationEntry {
+                expires_at,
+                id,
+                keys: keys.to_string(),
+            };
+
+            self.exp_heap.lock().unwrap().push(expiration_entry);
         }
     }
 }
