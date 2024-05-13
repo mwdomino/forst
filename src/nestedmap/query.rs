@@ -33,11 +33,9 @@ impl NestedMap {
             WILDCARD => {
                 // Iterate through all entries in the current map
                 for (key, value) in &current.data {
-                    if key != VALUE_KEY {
-                        if let NestedValue::Map(nested_map) = value {
-                            // Recurse into every nested map when "*" is encountered
-                            self.query_recursive(&remaining_keys, nested_map, results, history_max);
-                        }
+                    if let NestedValue::Map(nested_map) = value {
+                        // Recurse into every nested map when "*" is encountered
+                        self.query_recursive(&remaining_keys, nested_map, results, history_max);
                     }
                 }
             }
