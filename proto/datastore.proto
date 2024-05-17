@@ -1,23 +1,30 @@
 syntax = "proto3";
 
-package nestedmap;
+package datastore;
 
 service Datastore {
     rpc Get(GetRequest) returns (GetResponse);
     rpc Set(SetRequest) returns (SetResponse);
     rpc Query(QueryRequest) returns (QueryResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+    rpc DeleteAtIndex(DeleteAtIndexRequest) returns (DeleteAtIndexResponse);
+}
+
+message Item {
+    string key = 1;
+    bytes value = 2;
 }
 
 message GetRequest {
-    string keys = 1;
+    string key = 1;
 }
 
 message GetResponse {
-    bytes item = 1;
+    Item item = 1;
 }
 
 message SetRequest {
-    string keys = 1;
+    string key = 1;
     bytes value = 2;
     SetOptions options = 3;
 }
@@ -31,10 +38,32 @@ message SetResponse {
     bool success = 1;
 }
 
+message GetOptions {
+    int64 history_count = 1;
+}
+
 message QueryRequest {
-    string keys = 1;
+    string key = 1;
+    GetOptions options = 2;
 }
 
 message QueryResponse {
-    repeated bytes items = 1;
+    repeated Item items = 1;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool success = 1;
+}
+
+message DeleteAtIndexRequest {
+    string key = 1;
+    int64 index = 2;
+}
+
+message DeleteAtIndexResponse {
+    bool success = 1;
 }

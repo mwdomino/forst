@@ -3,12 +3,12 @@ use std::sync::Mutex;
 use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore, DatastoreServer};
-use datastore::{GetRequest, GetResponse, QueryRequest, QueryResponse, SetRequest, SetResponse};
+use datastore::{GetRequest, GetResponse, SetRequest, SetResponse, QueryRequest, QueryResponse, Item, DeleteRequest, DeleteResponse, DeleteAtIndexRequest, DeleteAtIndexResponse};
 use rs_datastore::nestedmap::options::SetOptions;
-use rs_datastore::nestedmap::{Item, NestedMap};
+use rs_datastore::nestedmap::{NestedMap};
 
 pub mod datastore {
-    tonic::include_proto!("nestedmap");
+    tonic::include_proto!("datastore");
 }
 
 #[derive(Debug)]
@@ -30,23 +30,23 @@ impl Datastore for MyDatastore {
         &self,
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
-        let keys = request.into_inner().keys;
-        let map = self.map.lock().unwrap(); // Acquire the lock
 
+        let keys = request.into_inner().key;
+        let map = self.map.lock().unwrap(); // Acquire the lock
         match map.get(&keys) {
             Some(item) => {
-                // Serialize the item into Vec<u8>
-                let serialized_item = bincode::serialize(item).map_err(|e| {
-                    tonic::Status::internal(format!("Failed to serialize item: {}", e))
-                })?;
-
                 let reply = GetResponse {
-                    item: serialized_item,
+                    item: Some(Item{
+                        key: item.key.clone(),
+                        value: item.value.clone(),
+                    }),
                 };
 
                 Ok(tonic::Response::new(reply))
             }
-            None => Err(tonic::Status::not_found("Key not found")),
+            None => {
+                Ok(tonic::Response::new(GetResponse{item: None}))
+            },
         }
     }
 
@@ -62,7 +62,7 @@ impl Datastore for MyDatastore {
             ttl: std::time::Duration::from_secs(opts.ttl as u64),
         });
 
-        map.set(&req.keys, &req.value, options);
+        map.set(&req.key, &req.value, options);
 
         let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
@@ -72,10 +72,10 @@ impl Datastore for MyDatastore {
         &self,
         request: tonic::Request<QueryRequest>,
     ) -> Result<tonic::Response<QueryResponse>, tonic::Status> {
-        let keys = request.into_inner().keys;
+        let keys = request.into_inner().key;
         let map = self.map.lock().unwrap(); // Acquire the lock
 
-        let items: Vec<Item> = map.query(&keys, None); // TODO - support GetOptions
+        let items: Vec<rs_datastore::nestedmap::Item> = map.query(&keys, None); // TODO - support GetOptions
 
         if items.is_empty() {
             return Err(tonic::Status::not_found(
@@ -83,27 +83,29 @@ impl Datastore for MyDatastore {
             ));
         }
 
-        // Serialize each Item into Vec<u8>
-        let serialized_items: Vec<Vec<u8>> = items
-            .into_iter()
-            .map(|item| {
-                bincode::serialize(&item).map_err(|e| {
-                    tonic::Status::internal(format!("Failed to serialize item: {}", e))
-                })
-            })
-            .collect::<Result<_, _>>()?; // Collect results and handle potential errors
-
-        let reply = QueryResponse {
-            items: serialized_items,
-        };
+    let reply = QueryResponse {
+        items: items.into_iter().map(|item| Item{
+            key: item.key.clone(),
+            value: item.value.clone(),
+        }).collect(),
+    };
 
         Ok(tonic::Response::new(reply))
     }
+
+    async fn delete(&self, request: tonic::Request<DeleteRequest>) -> Result<tonic::Response<DeleteResponse>, tonic::Status> {
+        return Err(tonic::Status::not_found("Not implemented"));
+    }
+
+    async fn delete_at_index(&self, request: tonic::Request<DeleteAtIndexRequest>) -> Result<tonic::Response<DeleteAtIndexResponse>, tonic::Status> {
+        return Err(tonic::Status::not_found("Not implemented"));
+    }
+
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:50051".parse()?;
+    let addr = "127.0.0.1:7777".parse()?;
     let my_datastore = MyDatastore::new(3);
 
     Server::builder()
