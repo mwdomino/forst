@@ -4,33 +4,16 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
+use super::nestedmap::expiration_manager::ExpirationEntry;
+
 pub mod config;
 pub mod delete;
+pub mod expiration_manager;
 pub mod get;
 pub mod options;
 pub mod query;
 pub mod set;
 pub mod test_helpers;
-
-#[derive(PartialEq, Eq, Debug)]
-struct ExpirationEntry {
-    expires_at: SystemTime,
-    id: i64,
-    keys: String,
-}
-
-impl Ord for ExpirationEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Reverse order for min-heap
-        other.expires_at.cmp(&self.expires_at)
-    }
-}
-
-impl PartialOrd for ExpirationEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 #[derive(Debug)]
 pub struct NestedMap {
