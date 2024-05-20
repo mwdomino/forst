@@ -3,9 +3,12 @@ use std::sync::Mutex;
 use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore, DatastoreServer};
-use datastore::{GetRequest, GetResponse, SetRequest, SetResponse, QueryRequest, QueryResponse, Item, DeleteRequest, DeleteResponse, DeleteAtIndexRequest, DeleteAtIndexResponse};
+use datastore::{
+    DeleteAtIndexRequest, DeleteAtIndexResponse, DeleteRequest, DeleteResponse, GetRequest,
+    GetResponse, Item, QueryRequest, QueryResponse, SetRequest, SetResponse,
+};
 use rs_datastore::nestedmap::options::SetOptions;
-use rs_datastore::nestedmap::{NestedMap};
+use rs_datastore::nestedmap::NestedMap;
 
 pub mod datastore {
     tonic::include_proto!("datastore");
@@ -30,13 +33,12 @@ impl Datastore for MyDatastore {
         &self,
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
-
         let keys = request.into_inner().key;
         let map = self.map.lock().unwrap(); // Acquire the lock
         match map.get(&keys) {
             Some(item) => {
                 let reply = GetResponse {
-                    item: Some(Item{
+                    item: Some(Item {
                         key: item.key.clone(),
                         value: item.value.clone(),
                     }),
@@ -44,9 +46,7 @@ impl Datastore for MyDatastore {
 
                 Ok(tonic::Response::new(reply))
             }
-            None => {
-                Ok(tonic::Response::new(GetResponse{item: None}))
-            },
+            None => Ok(tonic::Response::new(GetResponse { item: None })),
         }
     }
 
@@ -83,24 +83,32 @@ impl Datastore for MyDatastore {
             ));
         }
 
-    let reply = QueryResponse {
-        items: items.into_iter().map(|item| Item{
-            key: item.key.clone(),
-            value: item.value.clone(),
-        }).collect(),
-    };
+        let reply = QueryResponse {
+            items: items
+                .into_iter()
+                .map(|item| Item {
+                    key: item.key.clone(),
+                    value: item.value.clone(),
+                })
+                .collect(),
+        };
 
         Ok(tonic::Response::new(reply))
     }
 
-    async fn delete(&self, request: tonic::Request<DeleteRequest>) -> Result<tonic::Response<DeleteResponse>, tonic::Status> {
+    async fn delete(
+        &self,
+        request: tonic::Request<DeleteRequest>,
+    ) -> Result<tonic::Response<DeleteResponse>, tonic::Status> {
         return Err(tonic::Status::not_found("Not implemented"));
     }
 
-    async fn delete_at_index(&self, request: tonic::Request<DeleteAtIndexRequest>) -> Result<tonic::Response<DeleteAtIndexResponse>, tonic::Status> {
+    async fn delete_at_index(
+        &self,
+        request: tonic::Request<DeleteAtIndexRequest>,
+    ) -> Result<tonic::Response<DeleteAtIndexResponse>, tonic::Status> {
         return Err(tonic::Status::not_found("Not implemented"));
     }
-
 }
 
 #[tokio::main]
