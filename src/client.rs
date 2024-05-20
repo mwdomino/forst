@@ -1,10 +1,8 @@
 use tonic::transport::Channel;
 use tonic::Request;
 
-use bincode; // Ensure bincode is added to Cargo.toml
-use chrono::{DateTime, Utc}; // Ensure chrono is added to Cargo.toml
-
-use rs_datastore::nestedmap::Item;
+use rmp_serde::decode::from_read_ref;
+use serde_json::{json, to_string, to_string_pretty, Value};
 
 use datastore::datastore_client::DatastoreClient;
 use datastore::{GetRequest, QueryRequest, SetRequest};
@@ -12,48 +10,50 @@ use datastore::{GetRequest, QueryRequest, SetRequest};
 use base64::{engine::general_purpose, Engine as _};
 
 pub mod datastore {
-    tonic::include_proto!("nestedmap");
+    tonic::include_proto!("datastore");
 }
 
 async fn get(
     client: &mut DatastoreClient<Channel>,
-    keys: String,
+    key: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = GetRequest { keys };
+    let request = GetRequest { key: key.clone() };
     let response = client.get(Request::new(request)).await?;
-    let item_bytes = response.into_inner().item;
+    let item = response.into_inner();
 
-    // Deserialize the item_bytes into an Item struct
-    let item: Item = bincode::deserialize(&item_bytes)?;
-
-    // Converting SystemTime to DateTime<Utc>
-    let datetime: DateTime<Utc> = DateTime::from(item.timestamp);
-    let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
-
-    // Decode the value assuming it is UTF-8 text; handle possible errors
-    let value_str = general_purpose::STANDARD
-        .decode(&item.value)
-        .map_err(|_| "Base64 decode error")
-        .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "Invalid UTF-8"))
-        .unwrap_or_else(|e| e.to_string());
-
-    println!(
-        "[{}][id:{}][key:{}] {}",
-        timestamp_str, item.id, item.key, value_str
-    );
+    if let Some(item) = item.item {
+        // deserialize messagepack into serde_json::Value
+        match from_read_ref::<_, Value>(&item.value) {
+            Ok(value) => {
+                if let Ok(json_str) = to_string_pretty(&value) {
+                    println!("{}", json_str);
+                } else {
+                    println!("Error formatting JSON");
+                }
+            }
+            Err(e) => {
+                println!(
+                    "[key: {}] Failed to deserialize MessagePack data: {:?}",
+                    item.key, e
+                );
+            }
+        }
+    } else {
+        println!("No item found for key: {}", key);
+    }
 
     Ok(())
 }
 
 async fn set(
     client: &mut DatastoreClient<Channel>,
-    keys: String,
+    key: String,
     value: Vec<u8>,
     ttl: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let encoded_value = general_purpose::STANDARD.encode(&value);
     let request = SetRequest {
-        keys,
+        key,
         value: encoded_value.into(),
         options: Some(datastore::SetOptions {
             preserve_history: true,
@@ -70,33 +70,37 @@ async fn set(
 
 async fn query(
     client: &mut DatastoreClient<Channel>,
-    keys: String,
+    key: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = QueryRequest { keys };
+    let request = QueryRequest {
+        key,
+        options: Some(datastore::GetOptions {
+            history_count: 0, // TODO: make this dynamic
+        }),
+    };
     let response = client.query(Request::new(request)).await?;
 
-    let items_bytes = response.into_inner().items; // Assuming items is Vec<u8> of serialized Item structs
+    let items = response.into_inner().items;
+    let mut results = Vec::new();
 
-    for item_bytes in items_bytes {
-        // Deserialize the item_bytes into an Item struct
-        let item: Item = bincode::deserialize(&item_bytes)
-            .map_err(|e| format!("Failed to deserialize item: {}", e))?;
+    for item in items {
+        // deserialize messagepack into serde_json::Value
+        let value = match from_read_ref::<_, Value>(&item.value) {
+            Ok(value) => value,
+            Err(_) => json!({"error": "Failed to deserialize MessagePack data"}),
+        };
 
-        // Convert SystemTime to DateTime<Utc>
-        let datetime: DateTime<Utc> = DateTime::from(item.timestamp);
-        let timestamp_str = datetime.format("%Y-%m-%d %H:%M:%S").to_string();
+        results.push(json!({
+            "key": item.key,
+            "value": value
+        }));
+    }
 
-        // Decode the base64 value and convert to a UTF-8 string
-        let value_str = general_purpose::STANDARD
-            .decode(&item.value)
-            .map_err(|_| "Base64 decode error")
-            .and_then(|bytes| String::from_utf8(bytes).map_err(|_| "Invalid UTF-8"))
-            .unwrap_or_else(|e| e.to_string());
-
-        println!(
-            "[{}][id:{}][key:{}] {}",
-            timestamp_str, item.id, item.key, value_str
-        );
+    // serialize results as json and return!
+    if let Ok(json_str) = to_string(&results) {
+        println!("{}", json_str);
+    } else {
+        println!("Error formatting JSON");
     }
 
     Ok(())
@@ -114,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let command = &args[0];
     let keys = args[1].clone();
-    let mut client = DatastoreClient::connect("http://127.0.0.1:50051").await?;
+    let mut client = DatastoreClient::connect("http://127.0.0.1:7777").await?;
 
     match command.as_str() {
         "get" => {
