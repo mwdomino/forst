@@ -57,18 +57,26 @@ impl NestedMap {
                 keys: keys.to_string(),
             };
 
-            self.exp_heap.lock().unwrap().push(expiration_entry);
+            if let Some(exp_mgr) = &self.exp_mgr {
+                exp_mgr.lock().unwrap().set(expiration_entry);
+            }
         }
     }
 }
 
 mod tests {
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::thread::sleep;
+    use std::time::Duration;
+
     use super::*;
+    use crate::nestedmap::expiration_manager::ExpirationManager;
     use crate::nestedmap::options::*;
     use crate::nestedmap::test_helpers::*;
 
-    #[test]
-    fn test_set() {
+    #[tokio::test]
+    async fn test_set() {
         //let mut nm = NestedMap::new(1);
 
         let test_cases = vec![
@@ -104,8 +112,8 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[test]
-    fn test_set_without_history() {
+    #[tokio::test]
+    async fn test_set_without_history() {
         let test_cases = vec![TestCase {
             name: "Test without history option",
             setup: Box::new(|nm| {
@@ -125,8 +133,8 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[test]
-    fn test_set_history() {
+    #[tokio::test]
+    async fn test_set_history() {
         let test_cases = vec![
             TestCase {
                 name: "Test more than max_history values",
@@ -194,8 +202,8 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[test]
-    fn test_set_mixed_history() {
+    #[tokio::test]
+    async fn test_set_mixed_history() {
         let test_cases = vec![TestCase {
             name: "Test more than max_history values",
             setup: Box::new(|nm| {
@@ -238,15 +246,65 @@ mod tests {
         set_tests(test_cases)
     }
 
+    #[tokio::test]
+    async fn test_expiration() {
+        let nm = Arc::new(Mutex::new(NestedMap::new(1)));
+
+        NestedMap::attach_expiration_manager(nm.clone());
+        {
+            let mut nm_locked = nm.lock().unwrap();
+            nm_locked.set("a.b.c", b"abc", Some(SetOptions::new().ttl(Duration::from_millis(100))));
+        }
+
+        // get value
+        {
+            let nm_locked = nm.lock().unwrap();
+            let result = nm_locked.get("a.b.c");
+
+            match result {
+                Some(_) => {},
+                None => {
+                    panic!("Did not find key");
+                },
+            };
+        };
+
+        // sleep for 200ms
+        let duration = Duration::from_millis(2000);
+        sleep(duration);
+
+        // get value, should not be present
+        {
+            let nm_locked = nm.lock().unwrap();
+            let result = nm_locked.get("a.b.c");
+
+            match result {
+                Some(_) => {
+                    panic!("Found key that should have been removed!")
+                },
+                None => {},
+            };
+        };
+    }
+
     fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
-            let mut nm = NestedMap::new(test.max_history);
-            (test.setup)(&mut nm);
+            let nm = Arc::new(Mutex::new(NestedMap::new(test.max_history)));
 
-            let results = nm.query(
-                &test.search_keys,
-                Some(GetOptions::new().history_count(test.max_history)),
-            );
+            NestedMap::attach_expiration_manager(nm.clone());
+            {
+                let mut nm_locked = nm.lock().unwrap();
+                (test.setup)(&mut *nm_locked);
+            }
+
+            let results = {
+                let nm_locked = nm.lock().unwrap();
+                nm_locked.query(
+                    &test.search_keys,
+                    Some(GetOptions::new().history_count(test.max_history)),
+                )
+            };
+
             assert_eq!(results.len(), test.expected.len());
             for (i, v) in results.iter().enumerate() {
                 assert!(items_equal(v, &test.expected[i]));

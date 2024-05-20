@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use expiration_manager::ExpirationEntry;
+use expiration_manager::{ExpirationEntry, ExpirationManager};
 
 pub mod config;
 pub mod delete;
@@ -19,7 +19,7 @@ pub mod test_helpers;
 pub struct NestedMap {
     data: BTreeMap<String, NestedValue>,
     max_history: usize,
-    exp_heap: Mutex<BinaryHeap<ExpirationEntry>>,
+    exp_mgr: Option<Arc<Mutex<ExpirationManager>>>,
     id_counter: Arc<AtomicI64>,
 }
 
@@ -52,8 +52,17 @@ impl NestedMap {
         NestedMap {
             data: BTreeMap::new(),
             max_history,
-            exp_heap: Mutex::new(BinaryHeap::new()),
+            exp_mgr: None,
             id_counter: Arc::new(AtomicI64::new(0)),
         }
+    }
+
+    pub fn attach_expiration_manager(nested_map: Arc<Mutex<Self>>) {
+        let exp_mgr = ExpirationManager::new(nested_map.clone());
+        nested_map.lock().unwrap().exp_mgr = Some(Arc::new(Mutex::new(exp_mgr)));
+    }
+
+    pub fn eviction_callback(&mut self, keys: &str, id: i64) {
+        println!("EVICTION CALLBACK RECEIVED FOR: {}", keys);
     }
 }
