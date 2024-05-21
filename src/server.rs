@@ -1,14 +1,13 @@
-use std::sync::Mutex;
 
 use tonic::transport::Server;
 
-use datastore::datastore_server::{Datastore, DatastoreServer};
+use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
 use datastore::{
     DeleteAtIndexRequest, DeleteAtIndexResponse, DeleteRequest, DeleteResponse, GetRequest,
     GetResponse, Item, QueryRequest, QueryResponse, SetRequest, SetResponse,
 };
 use rs_datastore::nestedmap::options::SetOptions;
-use rs_datastore::nestedmap::NestedMap;
+use rs_datastore::datastore::Datastore;
 
 pub mod datastore {
     tonic::include_proto!("datastore");
@@ -16,26 +15,26 @@ pub mod datastore {
 
 #[derive(Debug)]
 pub struct MyDatastore {
-    map: Mutex<NestedMap>,
+    datastore: Datastore,
 }
 
 impl MyDatastore {
     pub fn new(max_history: usize) -> Self {
         MyDatastore {
-            map: Mutex::new(NestedMap::new(max_history)),
+            datastore: Datastore::new(max_history),
         }
     }
 }
 
 #[tonic::async_trait]
-impl Datastore for MyDatastore {
+impl DatastoreTrait for MyDatastore {
     async fn get(
         &self,
         request: tonic::Request<GetRequest>,
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
-        let keys = request.into_inner().key;
-        let map = self.map.lock().unwrap(); // Acquire the lock
-        match map.get(&keys) {
+        let key = request.into_inner().key;
+
+        match self.datastore.get(&key).await {
             Some(item) => {
                 let reply = GetResponse {
                     item: Some(Item {
@@ -55,14 +54,13 @@ impl Datastore for MyDatastore {
         request: tonic::Request<SetRequest>,
     ) -> Result<tonic::Response<SetResponse>, tonic::Status> {
         let req = request.into_inner();
-        let mut map = self.map.lock().unwrap(); // Acquire the lock for mutable access
 
         let options = req.options.map(|opts| SetOptions {
             preserve_history: opts.preserve_history,
             ttl: std::time::Duration::from_secs(opts.ttl as u64),
         });
 
-        map.set(&req.key, &req.value, options);
+        self.datastore.set(req.key, &req.value, options).await;
 
         let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
@@ -72,9 +70,8 @@ impl Datastore for MyDatastore {
         &self,
         request: tonic::Request<QueryRequest>,
     ) -> Result<tonic::Response<QueryResponse>, tonic::Status> {
-        let keys = request.into_inner().key;
-        let map = self.map.lock().unwrap(); // Acquire the lock
-
+        let key = request.into_inner().key;
+/*
         let items: Vec<rs_datastore::nestedmap::Item> = map.query(&keys, None); // TODO - support GetOptions
 
         if items.is_empty() {
@@ -91,6 +88,13 @@ impl Datastore for MyDatastore {
                     value: item.value.clone(),
                 })
                 .collect(),
+        };
+*/
+        let reply = QueryResponse {
+            items: vec![Item {
+                key: key.clone(),
+                value: vec![0],
+            }],
         };
 
         Ok(tonic::Response::new(reply))
