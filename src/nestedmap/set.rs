@@ -73,7 +73,6 @@ mod tests {
     use tokio::time::sleep;
 
     use super::*;
-    use crate::nestedmap::expiration_manager::ExpirationManager;
     use crate::nestedmap::options::*;
     use crate::nestedmap::test_helpers::*;
 
@@ -261,14 +260,9 @@ mod tests {
         // get value
         {
             let nm_locked = nm.lock().unwrap();
-            let result = nm_locked.get("a.b.c");
-
-            match result {
-                Some(_) => {},
-                None => {
-                    panic!("Did not find key");
-                },
-            };
+            if nm_locked.get("a.b.c").is_none() {
+                panic!("Did not find key");
+            }
         };
 
         // sleep for 200ms
@@ -278,14 +272,10 @@ mod tests {
         // get value, should not be present
         {
             let nm_locked = nm.lock().unwrap();
-            let result = nm_locked.get("a.b.c");
+            if nm_locked.get("a.b.c").is_some() {
+                panic!("Found key that should have been removed!")
+            }
 
-            match result {
-                Some(_) => {
-                    panic!("Found key that should have been removed!")
-                },
-                None => {},
-            };
         };
     }
 
@@ -296,7 +286,7 @@ mod tests {
             NestedMap::attach_expiration_manager(nm.clone());
             {
                 let mut nm_locked = nm.lock().unwrap();
-                (test.setup)(&mut *nm_locked);
+                (test.setup)(&mut nm_locked);
             }
 
             let results = {
