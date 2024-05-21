@@ -52,8 +52,6 @@ impl Datastore {
                 Duration::new(0, 0)
             };
 
-            println!("Scheduling next expiration in {:?}", duration);
-
             let data_clone = self.map.clone();
             let next_entry = next_expiry.clone();
             let notify = self.notify.clone();

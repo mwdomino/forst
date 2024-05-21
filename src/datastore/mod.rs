@@ -36,7 +36,7 @@ impl Datastore {
         let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
 
         if let Some(ref options) = options {
-            if options.ttl.as_secs() > 0 {
+            if options.ttl.as_millis() > 0 {
                 let expires_at = SystemTime::now() + options.ttl;
                 let expiration_entry = ExpirationEntry {
                     expires_at,
@@ -88,7 +88,7 @@ mod tests {
         }
 
         // sleep for 200ms
-        let duration = Duration::from_millis(200);
+        let duration = Duration::from_millis(120);
         sleep(duration).await;
 
         if ds.get("a.b.c").await.is_some() {
