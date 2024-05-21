@@ -1,12 +1,11 @@
-use tokio::sync::{Mutex, Notify};
-use tokio::time::{sleep, Sleep};
 use std::collections::BinaryHeap;
-use std::sync::{atomic::AtomicI64, Arc};
 use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicI64, Arc};
 use std::time::SystemTime;
+use tokio::sync::{Mutex, Notify};
 
-use crate::nestedmap::{NestedMap, Item};
 use crate::nestedmap::options::SetOptions;
+use crate::nestedmap::{Item, NestedMap};
 
 use expiration::ExpirationEntry;
 
@@ -16,7 +15,6 @@ pub mod expiration;
 pub struct Datastore {
     map: Arc<Mutex<NestedMap>>,
     ttl: Arc<Mutex<BinaryHeap<ExpirationEntry>>>,
-    timer: Arc<Mutex<Option<Sleep>>>,
     id_counter: Arc<AtomicI64>,
     notify: Arc<Notify>,
 }
@@ -26,7 +24,6 @@ impl Datastore {
         Datastore {
             map: Arc::new(Mutex::new(NestedMap::new(max_history))),
             ttl: Arc::new(Mutex::new(BinaryHeap::new())),
-            timer: Arc::new(Mutex::new(None)),
             id_counter: Arc::new(AtomicI64::new(0)),
             notify: Arc::new(Notify::new()),
         }
@@ -58,16 +55,7 @@ impl Datastore {
             id,
         };
 
-        let ttl = self.ttl.lock().await;
-
-        let should_notify = !ttl.is_empty();
         map.set(&key, &new_item, options);
-
-        if should_notify {
-            self.notify.notify_one();
-        } else {
-            self.schedule_next();
-        }
     }
 
     pub async fn get(&self, key: &str) -> Option<Item> {
@@ -76,3 +64,35 @@ impl Datastore {
     }
 }
 
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    use tokio::time::sleep;
+
+    #[tokio::test]
+    async fn test_expiration() {
+        let ds = Datastore::new(1);
+
+        // set value with ttl
+        ds.set(
+            "a.b.c".to_string(),
+            b"abc",
+            Some(SetOptions::new().ttl(Duration::from_millis(100))),
+        )
+        .await;
+
+        // get value
+        if ds.get("a.b.c").await.is_none() {
+            panic!("Did not find key");
+        }
+
+        // sleep for 200ms
+        let duration = Duration::from_millis(200);
+        sleep(duration).await;
+
+        if ds.get("a.b.c").await.is_some() {
+            panic!("Found key that should have been removed!")
+        }
+    }
+}

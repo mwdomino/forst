@@ -1,6 +1,6 @@
-use std::{sync::Arc, time::{Duration, SystemTime}};
 use crate::datastore::Datastore;
-use tokio::time::{sleep, sleep_until, Instant, Sleep};
+use std::time::{Duration, SystemTime};
+use tokio::time::sleep;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct ExpirationEntry {
@@ -62,10 +62,8 @@ impl Datastore {
                 tokio::select! {
                     _ = sleep(duration) => {
                         // timeout has expired, call the eviction_callback
-                        println!("deleting...");
                         let mut data = data_clone.lock().await;
                         data.delete_by_id(&next_entry.key, next_entry.id);
-                        println!("delete completed...");
                     }
                     _ = notify.notified() => {
                         // Timer was canceled
@@ -75,4 +73,3 @@ impl Datastore {
         }
     }
 }
-

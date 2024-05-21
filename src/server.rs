@@ -1,4 +1,3 @@
-
 use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
@@ -6,8 +5,8 @@ use datastore::{
     DeleteAtIndexRequest, DeleteAtIndexResponse, DeleteRequest, DeleteResponse, GetRequest,
     GetResponse, Item, QueryRequest, QueryResponse, SetRequest, SetResponse,
 };
-use rs_datastore::nestedmap::options::SetOptions;
 use rs_datastore::datastore::Datastore;
+use rs_datastore::nestedmap::options::SetOptions;
 
 pub mod datastore {
     tonic::include_proto!("datastore");
@@ -71,25 +70,25 @@ impl DatastoreTrait for MyDatastore {
         request: tonic::Request<QueryRequest>,
     ) -> Result<tonic::Response<QueryResponse>, tonic::Status> {
         let key = request.into_inner().key;
-/*
-        let items: Vec<rs_datastore::nestedmap::Item> = map.query(&keys, None); // TODO - support GetOptions
+        /*
+                let items: Vec<rs_datastore::nestedmap::Item> = map.query(&keys, None); // TODO - support GetOptions
 
-        if items.is_empty() {
-            return Err(tonic::Status::not_found(
-                "No items found for the given keys",
-            ));
-        }
+                if items.is_empty() {
+                    return Err(tonic::Status::not_found(
+                        "No items found for the given keys",
+                    ));
+                }
 
-        let reply = QueryResponse {
-            items: items
-                .into_iter()
-                .map(|item| Item {
-                    key: item.key.clone(),
-                    value: item.value.clone(),
-                })
-                .collect(),
-        };
-*/
+                let reply = QueryResponse {
+                    items: items
+                        .into_iter()
+                        .map(|item| Item {
+                            key: item.key.clone(),
+                            value: item.value.clone(),
+                        })
+                        .collect(),
+                };
+        */
         let reply = QueryResponse {
             items: vec![Item {
                 key: key.clone(),

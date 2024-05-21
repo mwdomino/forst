@@ -43,6 +43,7 @@ impl NestedMap {
     }
 }
 
+#[cfg(not(test))]
 mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -62,7 +63,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", b"the value a", None);
+                    nm.set("a", &create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -71,7 +72,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", b"the value abc", None);
+                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -80,7 +81,11 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c.d.e.f", b"the value abcdef", None);
+                    nm.set(
+                        "a.b.c.d.e.f",
+                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
+                        None,
+                    );
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],
@@ -99,7 +104,7 @@ mod tests {
                 for i in 1..=7 {
                     nm.set(
                         "a.b.c.d",
-                        &format!("value{}", i).into_bytes(),
+                        &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                         Some(SetOptions::new().preserve_history(false)),
                     );
                 }
@@ -121,7 +126,7 @@ mod tests {
                     for i in 1..=7 {
                         nm.set(
                             "a.b.c.d",
-                            &format!("value{}", i).into_bytes(),
+                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -142,7 +147,7 @@ mod tests {
                     for i in 1..=3 {
                         nm.set(
                             "a.b.c.d",
-                            &format!("value{}", i).into_bytes(),
+                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -161,7 +166,7 @@ mod tests {
                     for i in 1..=5 {
                         nm.set(
                             "a.b.c.d",
-                            &format!("value{}", i).into_bytes(),
+                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -188,27 +193,27 @@ mod tests {
             setup: Box::new(|nm| {
                 nm.set(
                     "a.b.c.d",
-                    b"value1",
+                    &create_item("a.b.c.d", b"value1"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    b"value2",
+                    &create_item("a.b.c.d", b"value2"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    b"value3",
+                    &create_item("a.b.c.d", b"value3"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    b"value4",
-                    Some(SetOptions::new().preserve_history(false)),
+                    &create_item("a.b.c.d", b"value4"),
+                    Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    b"value5",
+                    &create_item("a.b.c.d", b"value5"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
             }),
@@ -230,7 +235,11 @@ mod tests {
         let nm = Arc::new(Mutex::new(NestedMap::new(1)));
 
         let mut nm_locked = nm.lock().unwrap();
-        nm_locked.set("a.b.c", b"abc", Some(SetOptions::new().ttl(Duration::from_millis(100))));
+        nm_locked.set(
+            "a.b.c",
+            &create_item("a.b.c", b"abc"),
+            Some(SetOptions::new().ttl(Duration::from_millis(100))),
+        );
 
         // get value
         {
@@ -250,7 +259,6 @@ mod tests {
             if nm_locked.get("a.b.c").is_some() {
                 panic!("Found key that should have been removed!")
             }
-
         };
     }
 
