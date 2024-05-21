@@ -34,7 +34,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", b"the value a", None);
+                    nm.set("a", &create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -43,7 +43,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", b"the value abc", None);
+                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -52,7 +52,11 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c.d.e.f", b"the value abcdef", None);
+                    nm.set(
+                        "a.b.c.d.e.f",
+                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
+                        None,
+                    );
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],

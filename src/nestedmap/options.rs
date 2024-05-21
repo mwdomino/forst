@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct SetOptions {
     pub preserve_history: bool,
     pub ttl: std::time::Duration,

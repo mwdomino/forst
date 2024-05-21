@@ -60,6 +60,42 @@ impl NestedMap {
 
         false
     }
+
+    pub fn delete_by_id(&mut self, keys: &str, id: i64) -> bool {
+        let keys: Vec<&str> = keys.split(DELIMITER).collect();
+        let mut current_map = &mut self.data;
+
+        for (i, key) in keys.iter().enumerate() {
+            if i == keys.len() - 1 {
+                // At the last key, access the nested items via VALUE_KEY
+                if let Some(NestedValue::Map(final_map)) = current_map.get_mut(*key) {
+                    if let Some(NestedValue::Items(items)) = final_map.data.get_mut(VALUE_KEY) {
+                        for (idx, item) in items.iter().enumerate() {
+                            if item.id == id {
+                                items.remove(idx);
+
+                                // Optionally remove the VALUE_KEY if no items left
+                                if items.is_empty() {
+                                    final_map.data.remove(VALUE_KEY);
+                                }
+
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Navigate deeper into the map
+            if let Some(NestedValue::Map(map)) = current_map.get_mut(*key) {
+                current_map = &mut map.data;
+            } else {
+                return false;
+            }
+        }
+
+        false
+    }
 }
 
 mod tests {
@@ -75,7 +111,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", b"the value a", None);
+                    nm.set("a", &create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: Vec::new(),
@@ -84,7 +120,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", b"the value abc", None);
+                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: Vec::new(),
@@ -93,7 +129,11 @@ mod tests {
             TestCase {
                 name: "Test depth 5",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c.d.e", b"the value abcde", None);
+                    nm.set(
+                        "a.b.c.d.e",
+                        &create_item("a.b.c.d.e", b"the value abcde"),
+                        None,
+                    );
                 }),
                 search_keys: "a.b.c.d.e".to_string(),
                 expected: Vec::new(),
@@ -110,11 +150,15 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a", b"the value a", None);
-                    nm.set("a.b", b"the value ab", None);
-                    nm.set("a.b.c", b"the value abc", None);
-                    nm.set("a.b.c.d", b"the value abcd", None);
-                    nm.set("a.b.c.d.e", b"the value abcde", None);
+                    nm.set("a", &create_item("a", b"the value a"), None);
+                    nm.set("a.b", &create_item("a.b", b"the value ab"), None);
+                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
+                    nm.set("a.b.c.d", &create_item("a.b.c.d", b"the value abcd"), None);
+                    nm.set(
+                        "a.b.c.d.e",
+                        &create_item("a.b.c.d.e", b"the value abcde"),
+                        None,
+                    );
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![
@@ -126,13 +170,25 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a", b"the value a", None);
-                    nm.set("a.b", b"the value ab", None);
-                    nm.set("a.b.c", b"the value abc", None);
-                    nm.set("a.b.c.d", b"the value abcd", None);
-                    nm.set("a.b.c.d.e", b"the value abcde", None);
-                    nm.set("a.b.c.d.e.f", b"the value abcdef", None);
-                    nm.set("a.b.c.d.e.f.g", b"the value abcdefg", None);
+                    nm.set("a", &create_item("a", b"the value a"), None);
+                    nm.set("a.b", &create_item("a.b", b"the value ab"), None);
+                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
+                    nm.set("a.b.c.d", &create_item("a.b.c.d", b"the value abcd"), None);
+                    nm.set(
+                        "a.b.c.d.e",
+                        &create_item("a.b.c.d.e", b"the value abcde"),
+                        None,
+                    );
+                    nm.set(
+                        "a.b.c.d.e.f",
+                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
+                        None,
+                    );
+                    nm.set(
+                        "a.b.c.d.e.f.g",
+                        &create_item("a.b.c.d.e.f.g", b"the value abcdefg"),
+                        None,
+                    );
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f.g", b"the value abcdefg")],
@@ -149,17 +205,17 @@ mod tests {
 
         nm.set(
             "a.b.c",
-            b"value1",
+            &create_item("a.b.c", b"value1"),
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
             "a.b.c",
-            b"value2",
+            &create_item("a.b.c", b"value2"),
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
             "a.b.c",
-            b"value3",
+            &create_item("a.b.c", b"value3"),
             Some(SetOptions::new().preserve_history(true)),
         );
 
@@ -180,7 +236,7 @@ mod tests {
 
         nm.set(
             "a.b.c",
-            b"value1",
+            &create_item("a.b.c", b"value1"),
             Some(SetOptions::new().preserve_history(true)),
         );
 
