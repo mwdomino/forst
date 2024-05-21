@@ -60,6 +60,42 @@ impl NestedMap {
 
         false
     }
+
+    pub fn delete_by_id(&mut self, keys: &str, id: i64) -> bool {
+        let keys: Vec<&str> = keys.split(DELIMITER).collect();
+        let mut current_map = &mut self.data;
+
+        for (i, key) in keys.iter().enumerate() {
+            if i == keys.len() - 1 {
+                // At the last key, access the nested items via VALUE_KEY
+                if let Some(NestedValue::Map(final_map)) = current_map.get_mut(*key) {
+                    if let Some(NestedValue::Items(items)) = final_map.data.get_mut(VALUE_KEY) {
+                        for (idx, item) in items.iter().enumerate() {
+                            if item.id == id {
+                                items.remove(idx);
+
+                                // Optionally remove the VALUE_KEY if no items left
+                                if items.is_empty() {
+                                    final_map.data.remove(VALUE_KEY);
+                                }
+
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Navigate deeper into the map
+            if let Some(NestedValue::Map(map)) = current_map.get_mut(*key) {
+                current_map = &mut map.data;
+            } else {
+                return false;
+            }
+        }
+
+        false
+    }
 }
 
 mod tests {

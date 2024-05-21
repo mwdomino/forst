@@ -32,6 +32,17 @@ impl NestedMap {
                 id,
             };
 
+            let expires_at = SystemTime::now() + options.ttl;
+            let expiration_entry = ExpirationEntry {
+                expires_at,
+                id,
+                keys: keys.to_string(),
+            };
+
+            if let Some(exp_mgr) = &self.exp_mgr {
+                exp_mgr.lock().unwrap().set(expiration_entry);
+            }
+
             let length: usize = items.len();
 
             if !options.preserve_history {
@@ -50,16 +61,6 @@ impl NestedMap {
             }
             items.push_front(new_item); // Insert new item at the start of the list
 
-            let expires_at = SystemTime::now() + options.ttl;
-            let expiration_entry = ExpirationEntry {
-                expires_at,
-                id,
-                keys: keys.to_string(),
-            };
-
-            if let Some(exp_mgr) = &self.exp_mgr {
-                exp_mgr.lock().unwrap().set(expiration_entry);
-            }
         }
     }
 }
@@ -67,8 +68,9 @@ impl NestedMap {
 mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
-    use std::thread::sleep;
     use std::time::Duration;
+
+    use tokio::time::sleep;
 
     use super::*;
     use crate::nestedmap::expiration_manager::ExpirationManager;
@@ -270,8 +272,8 @@ mod tests {
         };
 
         // sleep for 200ms
-        let duration = Duration::from_millis(2000);
-        sleep(duration);
+        let duration = Duration::from_millis(120);
+        sleep(duration).await;
 
         // get value, should not be present
         {

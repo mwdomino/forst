@@ -63,6 +63,6 @@ impl NestedMap {
     }
 
     pub fn eviction_callback(&mut self, keys: &str, id: i64) {
-        println!("EVICTION CALLBACK RECEIVED FOR: {}", keys);
+        let _ = self.delete_by_id(keys, id);
     }
 }

@@ -77,9 +77,13 @@ impl ExpirationManager {
     }
 
     pub fn set(&mut self, entry: ExpirationEntry) {
+        let should_notify = !self.entries.is_empty();
         self.entries.push(entry);
-        self.notify.notify_one(); // Notify to cancel the existing timer
-        self.schedule_next();
+        if should_notify {
+            self.notify.notify_one();
+        } else {
+            self.schedule_next();
+        }
     }
 
     fn schedule_next(&self) {
