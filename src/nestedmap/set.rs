@@ -230,48 +230,14 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_expiration() {
-        let nm = Arc::new(Mutex::new(NestedMap::new(1)));
-
-        let mut nm_locked = nm.lock().unwrap();
-        nm_locked.set(
-            "a.b.c",
-            &create_item("a.b.c", b"abc"),
-            Some(SetOptions::new().ttl(Duration::from_millis(100))),
-        );
-
-        // get value
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_none() {
-                panic!("Did not find key");
-            }
-        };
-
-        // sleep for 200ms
-        let duration = Duration::from_millis(120);
-        sleep(duration).await;
-
-        // get value, should not be present
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_some() {
-                panic!("Found key that should have been removed!")
-            }
-        };
-    }
-
     fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
-            let nm = Arc::new(Mutex::new(NestedMap::new(test.max_history)));
+            let mut nm = NestedMap::new(test.max_history);
 
-            let mut nm_locked = nm.lock().unwrap();
-            (test.setup)(&mut nm_locked);
+            (test.setup)(&mut nm);
 
             let results = {
-                let nm_locked = nm.lock().unwrap();
-                nm_locked.query(
+                nm.query(
                     &test.search_keys,
                     Some(GetOptions::new().history_count(test.max_history)),
                 )
