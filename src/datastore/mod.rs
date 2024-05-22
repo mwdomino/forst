@@ -4,10 +4,11 @@ use std::sync::{atomic::AtomicI64, Arc};
 use std::time::SystemTime;
 use tokio::sync::{Mutex, Notify};
 
-use crate::nestedmap::options::SetOptions;
-use crate::nestedmap::{Item, NestedMap};
-
+use crate::nestedmap::options::{GetOptions, SetOptions};
+use crate::nestedmap::NestedMap;
 use expiration::ExpirationEntry;
+
+pub use crate::nestedmap::Item;
 
 pub mod expiration;
 
@@ -61,6 +62,11 @@ impl Datastore {
     pub async fn get(&self, key: &str) -> Option<Item> {
         let map = self.map.lock().await;
         map.get(key).cloned()
+    }
+
+    pub async fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
+        let map = self.map.lock().await;
+        map.query(key, options)
     }
 }
 
