@@ -6,7 +6,7 @@ use datastore::{
     GetResponse, Item, QueryRequest, QueryResponse, SetRequest, SetResponse,
 };
 use rs_datastore::datastore::Datastore;
-use rs_datastore::nestedmap::options::SetOptions;
+use rs_datastore::nestedmap::options::{GetOptions, SetOptions};
 
 pub mod datastore {
     tonic::include_proto!("datastore");
@@ -69,31 +69,36 @@ impl DatastoreTrait for MyDatastore {
         &self,
         request: tonic::Request<QueryRequest>,
     ) -> Result<tonic::Response<QueryResponse>, tonic::Status> {
-        let key = request.into_inner().key;
-        /*
-                let items: Vec<rs_datastore::nestedmap::Item> = map.query(&keys, None); // TODO - support GetOptions
+        let inner = request.into_inner();
+        let key = inner.key;
 
-                if items.is_empty() {
-                    return Err(tonic::Status::not_found(
-                        "No items found for the given keys",
-                    ));
+        let options = inner.options.map(|opts| GetOptions {
+            history_count: opts.history_count.map_or(0, |count| {
+                if count >= 0 {
+                    count as usize
+                } else {
+                    0
                 }
+            }),
+        });
 
-                let reply = QueryResponse {
-                    items: items
-                        .into_iter()
-                        .map(|item| Item {
-                            key: item.key.clone(),
-                            value: item.value.clone(),
-                        })
-                        .collect(),
-                };
-        */
+        let items = self.datastore.query(&key, options).await;
+
+        if items.is_empty() {
+            return Err(tonic::Status::not_found(
+                "No items found for the given keys",
+            ));
+        }
+
+        // Construct the response from the items
         let reply = QueryResponse {
-            items: vec![Item {
-                key: key.clone(),
-                value: vec![0],
-            }],
+            items: items
+                .into_iter()
+                .map(|item| Item {
+                    key: item.key.clone(),
+                    value: item.value.clone(),
+                })
+                .collect(),
         };
 
         Ok(tonic::Response::new(reply))
