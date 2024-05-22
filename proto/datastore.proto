@@ -39,7 +39,7 @@ message SetResponse {
 }
 
 message GetOptions {
-    int64 history_count = 1;
+    optional int64 history_count = 1;
 }
 
 message QueryRequest {
