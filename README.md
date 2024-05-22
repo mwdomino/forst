@@ -1,5 +1,7 @@
 ### forst
-<img src="https://github.com/mwdomino/rs-datastore/blob/master/img/logo.jpg" alt="Logo" width="250" heigh="250"/>
+<p align="center">
+  <img src="https://github.com/mwdomino/rs-datastore/blob/master/img/logo.jpg" alt="Logo" width="250" heigh="250"/>
+</p>
 
 
 #### Why forst?
