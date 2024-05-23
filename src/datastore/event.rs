@@ -54,7 +54,6 @@ impl Datastore {
 
         tokio::spawn(async move {
             let mut timer = Timer::new();
-            timer.reset(Duration::from_secs(u64::MAX));
 
             loop {
                 tokio::select! {
