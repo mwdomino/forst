@@ -57,12 +57,13 @@ impl Datastore {
 
                 // clean up expired entry
                 if top.expires_at <= now {
-                    let expired_entry = ttl_guard.pop().expect("Entry should exist as we just peeked it");
-                    println!("Processing expired entry: {:?} at: {:?}", expired_entry, SystemTime::now());
+                    if let Some(expired_entry) = ttl_guard.pop() {
+                        println!("Processing expired entry: {:?} at: {:?}", expired_entry, SystemTime::now());
 
-                    let mut map_guard = map.lock().await;
+                        let mut map_guard = map.lock().await;
 
-                    map_guard.delete_by_id(&expired_entry.key, expired_entry.id);
+                        map_guard.delete_by_id(&expired_entry.key, expired_entry.id);
+                    }
                 } else {
                     // top not expired
                     break;
