@@ -110,6 +110,8 @@ impl Datastore {
                     _ = async {
                         if let Some(future) = timer.wait() {
                             future.await;
+                        } else {
+                            futures::future::pending::<()>().await;
                         }
                     } => {
                         // Timer expired, process expiration

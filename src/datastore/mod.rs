@@ -27,7 +27,7 @@ impl Datastore {
     pub fn new(max_history: usize) -> Self {
         env_logger::init();
 
-        let (sender, receiver) = mpsc::channel::<Event>(100);
+        let (sender, receiver) = mpsc::channel::<Event>(10000);
 
         let datastore = Datastore {
             map: Arc::new(Mutex::new(NestedMap::new(max_history))),
