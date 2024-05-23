@@ -9,6 +9,34 @@ use tokio::sync::mpsc::Receiver;
 use tokio::time;
 use tokio::time::Sleep;
 
+pub struct Timer {
+    timer: Option<std::pin::Pin<Box<Sleep>>>,
+}
+
+impl Timer {
+    pub fn new() -> Self {
+        Self {
+            timer: None,
+        }
+    }
+
+    pub fn reset(&mut self, duration: Duration) {
+        self.timer = Some(Box::pin(tokio::time::sleep(duration)));
+    }
+
+    pub fn disable(&mut self) {
+        self.timer = None;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.timer.is_some()
+    }
+
+    pub fn wait(&mut self) -> Option<impl std::future::Future<Output = ()> + '_> {
+        self.timer.as_mut().map(|timer| timer.as_mut())
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     TTLInsert(ExpirationEntry),
@@ -25,8 +53,8 @@ impl Datastore {
         info!("Starting event loop");
 
         tokio::spawn(async move {
-            let timer = tokio::time::sleep(Duration::from_secs(u64::MAX));
-            tokio::pin!(timer);
+            let mut timer = Timer::new();
+            timer.reset(Duration::from_secs(u64::MAX));
 
             loop {
                 tokio::select! {
@@ -44,15 +72,13 @@ impl Datastore {
                                         info!("there was an entry in ttl already");
                                         if next_expiry.expires_at > entry.expires_at {
                                             let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
-
-                                            timer.as_mut().reset(time::Instant::now() + duration);
+                                            timer.reset(duration);
                                             info!("Old timer updated using key:{} id:{}!", entry.key, entry.id);
                                         }
                                     } else {
                                         info!("No ttl entry found, inserting new");
                                         let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
-
-                                        timer.as_mut().reset(time::Instant::now() + duration);
+                                        timer.reset(duration);
                                     }
 
                                     ttl_guard.push(entry.clone());
@@ -68,10 +94,10 @@ impl Datastore {
                                     if let Some(next_expiry) = ttl_guard.peek() {
                                         let now = SystemTime::now();
                                         let duration = next_expiry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
-                                        timer.as_mut().reset(time::Instant::now() + duration);
+                                        timer.reset(duration);
                                     } else {
                                         // just set a long timer as the default
-                                        timer.as_mut().reset(time::Instant::now() + Duration::from_secs(5000));
+                                        timer.reset(Duration::from_secs(5000));
                                     }
                                 },
                                 Event::Notify => {
@@ -82,7 +108,11 @@ impl Datastore {
                             break;
                         }
                     },
-                    () = &mut timer => {
+                    _ = async {
+                        if let Some(future) = timer.wait() {
+                            future.await;
+                        }
+                    } => {
                         // Timer expired, process expiration
                         let mut ttl_guard = ttl.lock().await;
 
@@ -91,8 +121,7 @@ impl Datastore {
                             if next_expiry.expires_at < SystemTime::now() {
                                 if let Some(min_entry) = ttl_guard.pop() {
                                     info!("Timer expired for key:{} id:{}", min_entry.key, min_entry.id);
-
-                                    timer.as_mut().reset(time::Instant::now() + Duration::from_secs(5000));
+                                    timer.disable();
                                     let _ = sender.send(Event::TTLExpired(min_entry)).await;
                                 }
                             }
