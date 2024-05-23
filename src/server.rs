@@ -1,4 +1,5 @@
 use tonic::transport::Server;
+use std::time::Duration;
 
 use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
 use datastore::{
@@ -21,7 +22,7 @@ impl MyDatastore {
     pub fn new(max_history: usize) -> Self {
         MyDatastore {
             // TODO - determine polling interval for cache eviction
-            datastore: Datastore::new(max_history, None),
+            datastore: Datastore::new(max_history, Some(Duration::from_secs(1))),
         }
     }
 }
@@ -57,7 +58,7 @@ impl DatastoreTrait for MyDatastore {
 
         let options = req.options.map(|opts| SetOptions {
             preserve_history: opts.preserve_history,
-            ttl: std::time::Duration::from_secs(opts.ttl as u64),
+            ttl: std::time::Duration::from_secs(5),
         });
 
         self.datastore.set(req.key, &req.value, options).await;
