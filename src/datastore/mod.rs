@@ -27,7 +27,6 @@ impl Datastore {
             id_counter: Arc::new(AtomicI64::new(0)),
         };
 
-
         if let Some(interval) = expiration_poll {
             ds.start_polling(interval);
         }
