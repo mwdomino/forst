@@ -25,6 +25,8 @@ pub struct Datastore {
 
 impl Datastore {
     pub fn new(max_history: usize) -> Self {
+        env_logger::init();
+
         let (sender, receiver) = mpsc::channel::<Event>(100);
 
         let datastore = Datastore {
@@ -99,6 +101,13 @@ mod tests {
                 Some(SetOptions::new().ttl(Duration::from_millis(100))),
             )
             .await;
+        ds.clone()
+            .set(
+                "a.b.b".to_string(),
+                b"abc",
+                Some(SetOptions::new().ttl(Duration::from_millis(100))),
+            )
+            .await;
 
         println!("#### SETTING B");
         ds.clone()
@@ -114,30 +123,36 @@ mod tests {
             .set(
                 "a.b.e".to_string(),
                 b"abe",
-                Some(SetOptions::new().ttl(Duration::from_millis(300))),
+                Some(SetOptions::new().ttl(Duration::from_millis(400))),
             )
             .await;
 
         // get values
         let items = ds.query("a.b.>", None).await;
-        assert_eq!(items.len(), 3);
+        assert_eq!(items.len(), 4);
 
         // check first expiration
-        sleep(Duration::from_millis(120)).await;
+        sleep(Duration::from_millis(110)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 2);
 
         if ds.get("a.b.c").await.is_some() {
             panic!("Found key that should have been removed! a.b.c")
         }
 
         // check second expiration
-        sleep(Duration::from_millis(220)).await;
+        sleep(Duration::from_millis(110)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 1);
 
         if ds.get("a.b.d").await.is_some() {
             panic!("Found key that should have been removed! a.b.d")
         }
 
         // check last expiration
-        sleep(Duration::from_millis(320)).await;
+        sleep(Duration::from_millis(210)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 0);
 
         if ds.get("a.b.e").await.is_some() {
             panic!("Found key that should have been removed! a.b.e")
