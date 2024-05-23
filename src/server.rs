@@ -20,7 +20,8 @@ pub struct MyDatastore {
 impl MyDatastore {
     pub fn new(max_history: usize) -> Self {
         MyDatastore {
-            datastore: Datastore::new(max_history),
+            // TODO - determine polling interval for cache eviction
+            datastore: Datastore::new(max_history, None),
         }
     }
 }

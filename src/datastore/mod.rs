@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicI64, Arc};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use tokio::sync::{Mutex, Notify};
 
 use crate::nestedmap::options::{GetOptions, SetOptions};
@@ -17,17 +17,22 @@ pub struct Datastore {
     map: Arc<Mutex<NestedMap>>,
     ttl: Arc<Mutex<BinaryHeap<ExpirationEntry>>>,
     id_counter: Arc<AtomicI64>,
-    notify: Arc<Notify>,
 }
 
 impl Datastore {
-    pub fn new(max_history: usize) -> Self {
-        Datastore {
+    pub fn new(max_history: usize, expiration_poll: Option<Duration>) -> Self {
+        let ds = Datastore {
             map: Arc::new(Mutex::new(NestedMap::new(max_history))),
             ttl: Arc::new(Mutex::new(BinaryHeap::new())),
             id_counter: Arc::new(AtomicI64::new(0)),
-            notify: Arc::new(Notify::new()),
+        };
+
+
+        if let Some(interval) = expiration_poll {
+            ds.start_polling(interval);
         }
+
+        ds
     }
 
     // Async method to expose set functionality
@@ -78,27 +83,62 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiration() {
-        let ds = Datastore::new(1);
+        let ds = Arc::new(Datastore::new(1, Some(Duration::from_millis(50))));
 
         // set value with ttl
-        ds.set(
-            "a.b.c".to_string(),
-            b"abc",
-            Some(SetOptions::new().ttl(Duration::from_millis(100))),
-        )
-        .await;
+        ds.clone()
+          .set(
+              "a.b.c".to_string(),
+              b"abc",
+              Some(SetOptions::new().ttl(Duration::from_millis(100))),
+          )
+          .await;
 
-        // get value
-        if ds.get("a.b.c").await.is_none() {
-            panic!("Did not find key");
-        }
+        ds.clone()
+          .set(
+              "a.b.d".to_string(),
+              b"abd",
+              Some(SetOptions::new().ttl(Duration::from_millis(200))),
+          )
+          .await;
 
-        // sleep for 200ms
-        let duration = Duration::from_millis(120);
-        sleep(duration).await;
+        ds.clone()
+          .set(
+              "a.b.e".to_string(),
+              b"abe",
+              Some(SetOptions::new().ttl(Duration::from_millis(400))),
+          )
+          .await;
+
+        // get values
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 3);
+
+        // check first expiration (at 150ms)
+        sleep(Duration::from_millis(150)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 2);
 
         if ds.get("a.b.c").await.is_some() {
-            panic!("Found key that should have been removed!")
+            panic!("Found key that should have been removed! a.b.c")
+        }
+
+        // check second expiration (at 250ms)
+        sleep(Duration::from_millis(100)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 1);
+
+        if ds.get("a.b.d").await.is_some() {
+            panic!("Found key that should have been removed! a.b.d")
+        }
+
+        // check last expiration (at 450ms)
+        sleep(Duration::from_millis(200)).await;
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 0);
+
+        if ds.get("a.b.e").await.is_some() {
+            panic!("Found key that should have been removed! a.b.e")
         }
     }
 }
