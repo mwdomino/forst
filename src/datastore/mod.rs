@@ -1,15 +1,18 @@
 use std::collections::BinaryHeap;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicI64, Arc};
-use std::time::SystemTime;
-use tokio::sync::{Mutex, Notify};
+use std::time::{Duration, SystemTime};
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
 use crate::nestedmap::options::{GetOptions, SetOptions};
 use crate::nestedmap::NestedMap;
+use event::Event;
 use expiration::ExpirationEntry;
 
 pub use crate::nestedmap::Item;
 
+pub mod event;
 pub mod expiration;
 
 #[derive(Debug)]
@@ -17,17 +20,22 @@ pub struct Datastore {
     map: Arc<Mutex<NestedMap>>,
     ttl: Arc<Mutex<BinaryHeap<ExpirationEntry>>>,
     id_counter: Arc<AtomicI64>,
-    notify: Arc<Notify>,
+    event_sender: mpsc::Sender<Event>,
 }
 
 impl Datastore {
     pub fn new(max_history: usize) -> Self {
-        Datastore {
+        let (sender, receiver) = mpsc::channel::<Event>(100);
+
+        let datastore = Datastore {
             map: Arc::new(Mutex::new(NestedMap::new(max_history))),
             ttl: Arc::new(Mutex::new(BinaryHeap::new())),
             id_counter: Arc::new(AtomicI64::new(0)),
-            notify: Arc::new(Notify::new()),
-        }
+            event_sender: sender,
+        };
+
+        datastore.event_loop(receiver);
+        datastore
     }
 
     // Async method to expose set functionality
@@ -39,13 +47,15 @@ impl Datastore {
         if let Some(ref options) = options {
             if options.ttl.as_millis() > 0 {
                 let expires_at = SystemTime::now() + options.ttl;
-                let expiration_entry = ExpirationEntry {
-                    expires_at,
+
+                let entry = ExpirationEntry {
                     id,
                     key: key.to_string(),
+                    expires_at,
                 };
 
-                self.set_ttl(expiration_entry).await;
+                let sender = self.event_sender.clone();
+                let _ = sender.send(Event::TTLInsert(entry)).await;
             }
         }
 
@@ -78,27 +88,59 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiration() {
-        let ds = Datastore::new(1);
+        let ds = Arc::new(Datastore::new(1));
 
         // set value with ttl
-        ds.set(
-            "a.b.c".to_string(),
-            b"abc",
-            Some(SetOptions::new().ttl(Duration::from_millis(100))),
-        )
-        .await;
+        println!("#### SETTING A");
+        ds.clone()
+            .set(
+                "a.b.c".to_string(),
+                b"abc",
+                Some(SetOptions::new().ttl(Duration::from_millis(100))),
+            )
+            .await;
 
-        // get value
-        if ds.get("a.b.c").await.is_none() {
-            panic!("Did not find key");
-        }
+        println!("#### SETTING B");
+        ds.clone()
+            .set(
+                "a.b.d".to_string(),
+                b"abd",
+                Some(SetOptions::new().ttl(Duration::from_millis(200))),
+            )
+            .await;
 
-        // sleep for 200ms
-        let duration = Duration::from_millis(120);
-        sleep(duration).await;
+        println!("#### SETTING C");
+        ds.clone()
+            .set(
+                "a.b.e".to_string(),
+                b"abe",
+                Some(SetOptions::new().ttl(Duration::from_millis(300))),
+            )
+            .await;
+
+        // get values
+        let items = ds.query("a.b.>", None).await;
+        assert_eq!(items.len(), 3);
+
+        // check first expiration
+        sleep(Duration::from_millis(120)).await;
 
         if ds.get("a.b.c").await.is_some() {
-            panic!("Found key that should have been removed!")
+            panic!("Found key that should have been removed! a.b.c")
+        }
+
+        // check second expiration
+        sleep(Duration::from_millis(220)).await;
+
+        if ds.get("a.b.d").await.is_some() {
+            panic!("Found key that should have been removed! a.b.d")
+        }
+
+        // check last expiration
+        sleep(Duration::from_millis(320)).await;
+
+        if ds.get("a.b.e").await.is_some() {
+            panic!("Found key that should have been removed! a.b.e")
         }
     }
 }
