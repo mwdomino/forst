@@ -12,6 +12,11 @@ pub mod datastore {
     tonic::include_proto!("datastore");
 }
 
+use std::net::SocketAddr;
+use tokio::runtime::Builder;
+use console_subscriber::ConsoleLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
 #[derive(Debug)]
 pub struct MyDatastore {
     datastore: Datastore,
@@ -119,15 +124,25 @@ impl DatastoreTrait for MyDatastore {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:7777".parse()?;
-    let my_datastore = MyDatastore::new(3);
+fn main() {
+    // Create a new runtime with a custom configuration
+    let rt = Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
 
-    Server::builder()
-        .add_service(DatastoreServer::new(my_datastore))
-        .serve(addr)
-        .await?;
+    rt.block_on(async {
+        let addr = "127.0.0.1:7777".parse().expect("Failed to parse address");
+        let my_datastore = MyDatastore::new(3);
 
-    Ok(())
+        match Server::builder()
+            .concurrency_limit_per_connection(1024)
+            .add_service(DatastoreServer::new(my_datastore))
+            .serve(addr)
+            .await {
+                Ok(_) => (),
+                Err(e) => eprintln!("Server failed: {}", e),
+            }
+    });
 }
