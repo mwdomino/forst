@@ -14,8 +14,6 @@ pub mod datastore {
 
 use std::net::SocketAddr;
 use tokio::runtime::Builder;
-use console_subscriber::ConsoleLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug)]
 pub struct MyDatastore {
