@@ -10,8 +10,8 @@ import (
 
 	_ "go.uber.org/automaxprocs"
 
-	"google.golang.org/grpc"
 	pb "bench/datastore"
+	"google.golang.org/grpc"
 )
 
 func randomKey(prefix string, length int) string {
@@ -37,7 +37,7 @@ func sendRequests(client pb.DatastoreClient, wg *sync.WaitGroup, reqNum int, cou
 			Key:   key,
 			Value: []byte("some value"),
 			Options: &pb.SetOptions{
-				Ttl: 20,
+				Ttl: 200,
 			},
 		})
 		if err != nil {
