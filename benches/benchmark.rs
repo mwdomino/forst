@@ -2,9 +2,66 @@ use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::distributions::{Alphanumeric, Distribution};
 use rand::{thread_rng, Rng};
 
+use rs_datastore::datastore::Datastore;
 use rs_datastore::nestedmap::options::*;
 use rs_datastore::nestedmap::test_helpers::create_item;
-use rs_datastore::nestedmap::{NestedMap}; // Import your NestedMap module
+use rs_datastore::nestedmap::{NestedMap};
+use tokio::runtime::{Runtime, Builder}; // Import your NestedMap module
+
+fn bench_datastore_set(c: &mut Criterion) {
+    // Create a Tokio runtime
+    let rt = Runtime::new().unwrap();
+
+    let mut group = c.benchmark_group("set_datastore_key");
+
+    // Set the throughput to "Elements", where 1 element is one key being set
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("set_key a.b.c.d.e", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let ds = Datastore::new(5);
+                ds.set(
+                    "a.b.c.d.e".to_string(),
+                    b"some value a",
+                    Some(SetOptions::new().preserve_history(true)),
+                ).await
+            })
+        });
+    });
+
+    group.finish();
+}
+
+fn _bench_datastore_set(c: &mut Criterion) {
+    // Create a Tokio runtime
+    let rt = Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+
+    let ds = Datastore::new(5);
+
+    let mut group = c.benchmark_group("set_datastore_key");
+
+    // Set the throughput to "Elements", where 1 element is one key being set
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("set_key a.b.c.d.e", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                ds.set(
+                    "a.b.c.d.e".to_string(),
+                    b"some value a",
+                    Some(SetOptions::new().preserve_history(true)),
+                ).await
+            })
+        });
+    });
+
+    group.finish();
+}
 
 
 fn bench_get(c: &mut Criterion) {
@@ -319,7 +376,7 @@ fn random_key() -> String {
 //    bench_set_diverse_keys,
 //    bench_set_varying_ttls
 //);
-criterion_group!(benches, bench_set);
+criterion_group!(benches, bench_datastore_set);
 //criterion_group!(
 //    benches,
 //    bench_get,
