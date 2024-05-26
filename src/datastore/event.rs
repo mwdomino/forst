@@ -1,10 +1,14 @@
 use log::{info};
 
+use std::collections::BinaryHeap;
 use std::time::Duration;
 use std::time::SystemTime;
 
+use crate::nestedmap::NestedMap;
+
 use super::Datastore;
 use super::ExpirationEntry;
+use super::Item;
 use tokio::sync::mpsc::Receiver;
 use tokio::time;
 use tokio::time::Sleep;
@@ -41,13 +45,14 @@ impl Timer {
 pub enum Event {
     TTLInsert(ExpirationEntry),
     TTLExpired(ExpirationEntry),
+    Set(Item),
     Notify,
 }
 
 impl Datastore {
     pub fn event_loop(&self, mut receiver: Receiver<Event>) {
-        let map = self.map.clone();
-        let ttl = self.ttl.clone();
+        let mut map = NestedMap::new(5);
+        let mut ttl: BinaryHeap<ExpirationEntry> = BinaryHeap::new();
         let sender = self.event_sender.clone();
 
         info!("Starting event loop");
@@ -62,12 +67,14 @@ impl Datastore {
 
                         if let Some(event) = event {
                             match event {
+                                Event::Set(item) => {
+                                    map.set(&item.key, &item, None);
+                                }
                                 Event::TTLInsert(entry) => {
-                                    let mut ttl_guard = ttl.lock().await;
                                     info!("Inserted entry: key:{} id:{}", entry.key, entry.id);
                                     let now = SystemTime::now();
 
-                                    if let Some(next_expiry) = ttl_guard.peek() {
+                                    if let Some(next_expiry) = ttl.peek() {
                                         info!("there was an entry in ttl already");
                                         if next_expiry.expires_at > entry.expires_at {
                                             let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
@@ -80,17 +87,15 @@ impl Datastore {
                                         timer.reset(duration);
                                     }
 
-                                    ttl_guard.push(entry.clone());
+                                    ttl.push(entry.clone());
                                 },
                                 Event::TTLExpired(entry) => {
-                                    let mut map_guard = map.lock().await;
-                                    map_guard.delete_by_id(&entry.key, entry.id);
+                                    map.delete_by_id(&entry.key, entry.id);
 
                                     info!("Deleted entry: key:{} id:{}", entry.key, entry.id);
 
                                     // need to update the timer now
-                                    let ttl_guard = ttl.lock().await;
-                                    if let Some(next_expiry) = ttl_guard.peek() {
+                                    if let Some(next_expiry) = ttl.peek() {
                                         let now = SystemTime::now();
                                         let duration = next_expiry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
                                         timer.reset(duration);
@@ -115,12 +120,10 @@ impl Datastore {
                         }
                     } => {
                         // Timer expired, process expiration
-                        let mut ttl_guard = ttl.lock().await;
-
-                        if let Some(next_expiry) = ttl_guard.peek() {
+                        if let Some(next_expiry) = ttl.peek() {
                             // ensure entry is expired
                             if next_expiry.expires_at < SystemTime::now() {
-                                if let Some(min_entry) = ttl_guard.pop() {
+                                if let Some(min_entry) = ttl.pop() {
                                     info!("Timer expired for key:{} id:{}", min_entry.key, min_entry.id);
                                     timer.disable();
                                     let _ = sender.send(Event::TTLExpired(min_entry)).await;

@@ -1,11 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::distributions::{Alphanumeric, Distribution};
 use rand::{thread_rng, Rng};
-use rs_datastore::datastore::*;
+
 use rs_datastore::nestedmap::options::*;
 use rs_datastore::nestedmap::test_helpers::create_item;
-use rs_datastore::nestedmap::{Item, NestedMap}; // Import your NestedMap module
-use tokio::runtime::{Builder, Runtime};
+use rs_datastore::nestedmap::{NestedMap}; // Import your NestedMap module
+
 
 fn bench_get(c: &mut Criterion) {
     let mut nm = NestedMap::new(1);
@@ -46,6 +46,31 @@ fn bench_get(c: &mut Criterion) {
 fn bench_set(c: &mut Criterion) {
     let mut nm = NestedMap::new(5);
 
+    // Define a throughput benchmark
+    let mut group = c.benchmark_group("set_key");
+
+    // Set the throughput to "Elements", where 1 element is one key being set
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("set_key a.b.c.d.e", |b| {
+        b.iter(|| {
+            nm.set(
+                &"a.b.c.d.e".to_string(),
+                &create_item(&"a.b.c.d.e", b"some value a"),
+                Some(SetOptions::new().preserve_history(true)),
+            );
+        });
+    });
+
+    // Finish the benchmark group
+    group.finish();
+}
+
+// Define the criterion group and main function
+/*
+fn bench_set(c: &mut Criterion) {
+    let mut nm = NestedMap::new(5);
+
     c.bench_function("set_key a.b.c.d.e", |b| {
         b.iter(|| {
             nm.set(
@@ -56,7 +81,7 @@ fn bench_set(c: &mut Criterion) {
         });
     });
 }
-
+*/
 //fn bench_query_direct(c: &mut Criterion) {
 //    let mut nm = NestedMap::new(5);
 //    seed_queries(&mut nm);

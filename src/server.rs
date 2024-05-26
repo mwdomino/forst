@@ -1,3 +1,4 @@
+use tokio::runtime::Builder;
 use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
@@ -119,15 +120,26 @@ impl DatastoreTrait for MyDatastore {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:7777".parse()?;
-    let my_datastore = MyDatastore::new(3);
 
-    Server::builder()
-        .add_service(DatastoreServer::new(my_datastore))
-        .serve(addr)
-        .await?;
+fn main() {
+    // Create a new runtime with a custom configuration
+    let rt = Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
 
-    Ok(())
+    rt.block_on(async {
+        let addr = "127.0.0.1:7777".parse().expect("Failed to parse address");
+        let my_datastore = MyDatastore::new(3);
+
+        match Server::builder()
+            .add_service(DatastoreServer::new(my_datastore))
+            .serve(addr)
+            .await {
+                Ok(_) => (),
+                Err(e) => eprintln!("Server failed: {}", e),
+            }
+    });
 }
+
