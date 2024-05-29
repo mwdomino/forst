@@ -4,6 +4,7 @@ use std::sync::{atomic::AtomicI64, Arc};
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 
 use crate::nestedmap::options::{GetOptions, SetOptions};
 use crate::nestedmap::NestedMap;
@@ -17,21 +18,17 @@ pub mod expiration;
 
 #[derive(Debug)]
 pub struct Datastore {
-    map: Arc<Mutex<NestedMap>>,
-    ttl: Arc<Mutex<BinaryHeap<ExpirationEntry>>>,
     id_counter: Arc<AtomicI64>,
     event_sender: mpsc::Sender<Event>,
 }
 
 impl Datastore {
-    pub fn new(max_history: usize) -> Self {
+    pub fn new(_max_history: usize) -> Self {
         //env_logger::init();
 
         let (sender, receiver) = mpsc::channel::<Event>(10000);
 
         let datastore = Datastore {
-            map: Arc::new(Mutex::new(NestedMap::new(max_history))),
-            ttl: Arc::new(Mutex::new(BinaryHeap::new())),
             id_counter: Arc::new(AtomicI64::new(0)),
             event_sender: sender,
         };
@@ -42,7 +39,7 @@ impl Datastore {
 
     // Async method to expose set functionality
     pub async fn set(&self, key: String, value: &[u8], options: Option<SetOptions>) {
-        let mut map = self.map.lock().await;
+        let sender = self.event_sender.clone();
 
         let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
 
@@ -68,17 +65,35 @@ impl Datastore {
             id,
         };
 
-        map.set(&key, &new_item, options);
+        let _ = sender.send(Event::Set(new_item, options)).await;
     }
 
     pub async fn get(&self, key: &str) -> Option<Item> {
-        let map = self.map.lock().await;
-        map.get(key).cloned()
+        let sender = self.event_sender.clone();
+        let (get_tx, get_rx) = oneshot::channel();
+
+        let get_event = Event::Get(key.to_string(), get_tx);
+        let _ = sender.send(get_event).await;
+
+        // Await the response
+        match get_rx.await {
+            Ok(response) => return response,
+            Err(_) => return None, // TODO: handle this
+        }
     }
 
     pub async fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
-        let map = self.map.lock().await;
-        map.query(key, options)
+        let sender = self.event_sender.clone();
+        let (query_tx, query_rx) = oneshot::channel();
+
+        let query_event = Event::Query(key.to_string(), options, query_tx);
+        let _ = sender.send(query_event).await;
+
+        // Await the response
+        match query_rx.await {
+            Ok(response) => return response,
+            Err(_) => return vec![], // TODO: handle this
+        }
     }
 }
 

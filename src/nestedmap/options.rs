@@ -30,6 +30,7 @@ impl SetOptions {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct GetOptions {
     pub history_count: usize,
 }

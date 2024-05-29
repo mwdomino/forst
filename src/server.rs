@@ -120,7 +120,6 @@ impl DatastoreTrait for MyDatastore {
     }
 }
 
-
 fn main() {
     // Create a new runtime with a custom configuration
     let rt = Builder::new_multi_thread()

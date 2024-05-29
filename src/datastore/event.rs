@@ -1,4 +1,4 @@
-use log::{info};
+use log::info;
 
 use std::collections::BinaryHeap;
 use std::time::Duration;
@@ -6,11 +6,10 @@ use std::time::SystemTime;
 
 use crate::nestedmap::NestedMap;
 
-use super::Datastore;
+use super::{Datastore, GetOptions, SetOptions, Item};
 use super::ExpirationEntry;
-use super::Item;
 use tokio::sync::mpsc::Receiver;
-use tokio::time;
+use tokio::sync::oneshot;
 use tokio::time::Sleep;
 
 pub struct Timer {
@@ -41,11 +40,16 @@ impl Timer {
     }
 }
 
+pub type GetResponse = Option<Item>;
+pub type QueryResponse = Vec<Item>;
+
 #[derive(Debug)]
 pub enum Event {
     TTLInsert(ExpirationEntry),
     TTLExpired(ExpirationEntry),
-    Set(Item),
+    Set(Item, Option<SetOptions>),
+    Get(String, oneshot::Sender<GetResponse>),
+    Query(String, Option<GetOptions>, oneshot::Sender<QueryResponse>),
     Notify,
 }
 
@@ -67,27 +71,19 @@ impl Datastore {
 
                         if let Some(event) = event {
                             match event {
-                                Event::Set(item) => {
-                                    map.set(&item.key, &item, None);
+                                Event::Set(item, options) => {
+                                    map.set(&item.key, &item, options);
+                                }
+                                Event::Get(key, responder) => {
+                                    let item = map.get(&key).cloned();
+                                    let _ = responder.send(item);
+                                }
+                                Event::Query(key, options, responder) => {
+                                    let items = map.query(&key, options);
+                                    let _ = responder.send(items);
                                 }
                                 Event::TTLInsert(entry) => {
-                                    info!("Inserted entry: key:{} id:{}", entry.key, entry.id);
-                                    let now = SystemTime::now();
-
-                                    if let Some(next_expiry) = ttl.peek() {
-                                        info!("there was an entry in ttl already");
-                                        if next_expiry.expires_at > entry.expires_at {
-                                            let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
-                                            timer.reset(duration);
-                                            info!("Old timer updated using key:{} id:{}!", entry.key, entry.id);
-                                        }
-                                    } else {
-                                        info!("No ttl entry found, inserting new");
-                                        let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
-                                        timer.reset(duration);
-                                    }
-
-                                    ttl.push(entry.clone());
+                                    ttl_insert(&mut ttl, &mut timer, entry);
                                 },
                                 Event::TTLExpired(entry) => {
                                     map.delete_by_id(&entry.key, entry.id);
@@ -135,4 +131,25 @@ impl Datastore {
             }
         });
     }
+}
+
+// ttl_insert event handler
+fn ttl_insert(ttl: &mut BinaryHeap<ExpirationEntry>, timer: &mut Timer, entry: ExpirationEntry) {
+    info!("Inserted entry: key:{} id:{}", entry.key, entry.id);
+    let now = SystemTime::now();
+
+    if let Some(next_expiry) = ttl.peek() {
+        info!("there was an entry in ttl already");
+        if next_expiry.expires_at > entry.expires_at {
+            let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
+            timer.reset(duration);
+            info!("Old timer updated using key:{} id:{}!", entry.key, entry.id);
+        }
+    } else {
+        info!("No ttl entry found, inserting new");
+        let duration = entry.expires_at.duration_since(now).unwrap_or(Duration::new(0, 0));
+        timer.reset(duration);
+    }
+
+    ttl.push(entry.clone());
 }
