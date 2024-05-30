@@ -23,26 +23,6 @@ fn bench_get(c: &mut Criterion) {
     });
 }
 
-//fn bench_datastore(c: &mut Criterion) {
-//    let rt = Builder::new_multi_thread()
-//        .worker_threads(4) // Limit to 4 worker threads
-//        .enable_all()
-//        .build()
-//        .unwrap();
-//
-//
-//    c.bench_function("set 100k", |b| {
-//        b.iter(|| {
-//            rt.block_on(async {
-//                let ds = Datastore::new(5);
-//                for _ in 0..100_000 {
-//                    ds.set(random_key(), b"some value", None).await;
-//                }
-//            });
-//        });
-//    });
-//}
-
 fn bench_set(c: &mut Criterion) {
     let mut nm = NestedMap::new(5);
 

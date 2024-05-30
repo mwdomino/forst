@@ -25,9 +25,9 @@ pub struct Datastore {
 
 impl Datastore {
     pub fn new(max_history: usize) -> Self {
-        env_logger::init();
+        //env_logger::init();
 
-        let (sender, receiver) = mpsc::channel::<Event>(10000);
+        let (sender, receiver) = mpsc::channel::<Event>(100);
 
         let datastore = Datastore {
             map: Arc::new(Mutex::new(NestedMap::new(max_history))),
@@ -52,7 +52,7 @@ impl Datastore {
 
                 let entry = ExpirationEntry {
                     id,
-                    key: key.to_string(),
+                    key: key.clone(),
                     expires_at,
                 };
 
@@ -62,7 +62,7 @@ impl Datastore {
         }
 
         let new_item = Item {
-            key: key.to_string(),
+            key: key.clone(),
             value: value.to_vec(),
             timestamp: SystemTime::now(),
             id,

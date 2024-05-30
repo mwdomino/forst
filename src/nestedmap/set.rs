@@ -25,10 +25,10 @@ impl NestedMap {
             let length: usize = items.len();
 
             if !options.preserve_history {
-                if length > 0 {
-                    items[0] = value.clone();
+                if let Some(first) = items.front_mut() {
+                    *first = value.clone();
                 } else {
-                    items.insert(0, value.clone());
+                    items.push_front(value.clone());
                 }
 
                 return;

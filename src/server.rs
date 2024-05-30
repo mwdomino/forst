@@ -1,4 +1,6 @@
 use tonic::transport::Server;
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 
 use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
 use datastore::{
@@ -12,7 +14,6 @@ pub mod datastore {
     tonic::include_proto!("datastore");
 }
 
-use std::net::SocketAddr;
 use tokio::runtime::Builder;
 
 #[derive(Debug)]
@@ -55,6 +56,7 @@ impl DatastoreTrait for MyDatastore {
         &self,
         request: tonic::Request<SetRequest>,
     ) -> Result<tonic::Response<SetResponse>, tonic::Status> {
+        println!("SET CALLED");
         let req = request.into_inner();
 
         let options = req.options.map(|opts| SetOptions {
@@ -122,25 +124,53 @@ impl DatastoreTrait for MyDatastore {
     }
 }
 
-fn main() {
-    // Create a new runtime with a custom configuration
-    let rt = Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
+async fn serve(_: usize) {
+    println!("Called serve");
+    let addr: std::net::SocketAddr = "0.0.0.0:7777".parse().unwrap();
+    let sock = socket2::Socket::new(
+        match addr {
+            SocketAddr::V4(_) => socket2::Domain::IPV4,
+            SocketAddr::V6(_) => socket2::Domain::IPV6,
+        },
+        socket2::Type::STREAM,
+        None,
+    )
+    .unwrap();
+
+    sock.set_reuse_address(true).unwrap();
+    sock.set_reuse_port(true).unwrap();
+    sock.set_nonblocking(true).unwrap();
+    sock.bind(&addr.into()).unwrap();
+    sock.listen(8192).unwrap();
+
+    let incoming =
+        tokio_stream::wrappers::TcpListenerStream::new(TcpListener::from_std(sock.into()).unwrap());
+
+    let my_datastore = MyDatastore::new(3);
+
+    Server::builder()
+        .add_service(DatastoreServer::new(my_datastore))
+        .serve_with_incoming(incoming)
+        .await
         .unwrap();
+    println!("Serving on 7777");
+}
 
-    rt.block_on(async {
-        let addr = "127.0.0.1:7777".parse().expect("Failed to parse address");
-        let my_datastore = MyDatastore::new(3);
+fn main() {
+    let mut handlers = Vec::new();
+    println!("Launching!");
+    for i in 0..2 {
+        let h = std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(serve(i));
+        });
+        handlers.push(h);
+    }
 
-        match Server::builder()
-            .concurrency_limit_per_connection(1024)
-            .add_service(DatastoreServer::new(my_datastore))
-            .serve(addr)
-            .await {
-                Ok(_) => (),
-                Err(e) => eprintln!("Server failed: {}", e),
-            }
-    });
+    for h in handlers {
+        h.join().unwrap();
+    }
 }
