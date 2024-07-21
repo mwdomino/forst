@@ -191,10 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
                 .as_bytes()
                 .to_vec();
-            let ttl = sub_matches
-                .get_one::<String>("ttl")
-                .and_then(|v| v.parse::<i64>().ok())
-                .unwrap_or(0);
+            let ttl = sub_matches.get_one::<i64>("ttl").copied().unwrap_or(0);
             set(&mut client, key.to_string(), value, ttl).await?;
         }
         Some(("query", sub_matches)) => {

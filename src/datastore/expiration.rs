@@ -1,12 +1,14 @@
+use std::time::SystemTime;
+
+use super::event::Event;
 use crate::datastore::Datastore;
-use std::time::{Duration, SystemTime};
-use tokio::time::sleep;
+use tokio::sync::mpsc::Sender;
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct ExpirationEntry {
-    pub expires_at: SystemTime,
     pub id: i64,
     pub key: String,
+    pub expires_at: SystemTime,
 }
 
 impl Ord for ExpirationEntry {
@@ -19,55 +21,5 @@ impl Ord for ExpirationEntry {
 impl PartialOrd for ExpirationEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl Datastore {
-    pub async fn set_ttl(&self, entry: ExpirationEntry) {
-        let mut ttl = self.ttl.lock().await;
-
-        let should_notify = !ttl.is_empty();
-
-        ttl.push(entry);
-        drop(ttl);
-
-        if should_notify {
-            self.notify.notify_one();
-        } else {
-            self.schedule_next().await;
-        }
-    }
-
-    pub async fn schedule_next(&self) {
-        let ttl = self.ttl.lock().await;
-
-        if let Some(next_expiry) = ttl.peek() {
-            let now = SystemTime::now();
-            let duration = if next_expiry.expires_at > now {
-                next_expiry
-                    .expires_at
-                    .duration_since(now)
-                    .unwrap_or(Duration::new(0, 0))
-            } else {
-                Duration::new(0, 0)
-            };
-
-            let data_clone = self.map.clone();
-            let next_entry = next_expiry.clone();
-            let notify = self.notify.clone();
-
-            tokio::spawn(async move {
-                tokio::select! {
-                    _ = sleep(duration) => {
-                        // timeout has expired, call the eviction_callback
-                        let mut data = data_clone.lock().await;
-                        data.delete_by_id(&next_entry.key, next_entry.id);
-                    }
-                    _ = notify.notified() => {
-                        // Timer was canceled
-                    }
-                }
-            });
-        }
     }
 }

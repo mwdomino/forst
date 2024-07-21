@@ -47,9 +47,6 @@ impl NestedMap {
 mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
-    use std::time::Duration;
-
-    use tokio::time::sleep;
 
     use super::*;
     use crate::nestedmap::options::*;
