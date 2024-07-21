@@ -37,6 +37,12 @@ impl Timer {
     }
 }
 
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub enum Event {
     TTLInsert(ExpirationEntry),

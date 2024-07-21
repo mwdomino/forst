@@ -112,14 +112,14 @@ impl DatastoreTrait for MyDatastore {
 
     async fn delete(
         &self,
-        request: tonic::Request<DeleteRequest>,
+        _request: tonic::Request<DeleteRequest>,
     ) -> Result<tonic::Response<DeleteResponse>, tonic::Status> {
         return Err(tonic::Status::not_found("Not implemented"));
     }
 
     async fn delete_at_index(
         &self,
-        request: tonic::Request<DeleteAtIndexRequest>,
+        _request: tonic::Request<DeleteAtIndexRequest>,
     ) -> Result<tonic::Response<DeleteAtIndexResponse>, tonic::Status> {
         return Err(tonic::Status::not_found("Not implemented"));
     }
