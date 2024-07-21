@@ -1,3 +1,5 @@
+use tokio::signal;
+use tokio::sync::oneshot;
 use tonic::transport::Server;
 
 use datastore::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
@@ -121,13 +123,30 @@ impl DatastoreTrait for MyDatastore {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:7777".parse()?;
+    // Set up a channel to receive a shutdown signal
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+    // Spawn a task to handle signals
+    tokio::spawn(async move {
+        signal::ctrl_c().await.expect("failed to listen for event");
+        shutdown_tx.send(()).expect("failed to send shutdown signal");
+    });
+
+    let addr = "0.0.0.0:7777".parse()?;
     let my_datastore = MyDatastore::new(3);
 
-    Server::builder()
+    println!("Starting gRPC server on 0.0.0.0:7777");
+
+
+    let server = Server::builder()
         .add_service(DatastoreServer::new(my_datastore))
-        .serve(addr)
-        .await?;
+        .serve_with_shutdown(addr, async {
+            shutdown_rx.await.ok();
+        });
+
+    server.await?;
+
+    println!("Shutting down gracefully...");
 
     Ok(())
 }
