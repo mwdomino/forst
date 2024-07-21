@@ -1,3 +1,7 @@
+use std::net::{IpAddr, SocketAddr};
+
+use clap::{Parser, value_parser};
+
 use tokio::signal;
 use tokio::sync::oneshot;
 use tonic::transport::Server;
@@ -121,8 +125,26 @@ impl DatastoreTrait for MyDatastore {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    // IP to listen on
+    #[arg(short, long, default_value = "0.0.0.0", value_parser = value_parser!(IpAddr))]
+    listen_ip: IpAddr,
+
+    // Listen port
+    #[arg(short, long, default_value_t = 7777)]
+    port: u16,
+
+    // Max history for datastore
+    #[arg(short, long, default_value_t = 5)]
+    max_history: usize,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
     // Set up a channel to receive a shutdown signal
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -132,10 +154,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         shutdown_tx.send(()).expect("failed to send shutdown signal");
     });
 
-    let addr = "0.0.0.0:7777".parse()?;
-    let my_datastore = MyDatastore::new(3);
+    let addr = SocketAddr::new(args.listen_ip, args.port);
+    let my_datastore = MyDatastore::new(args.max_history);
 
-    println!("Starting gRPC server on 0.0.0.0:7777");
+    println!("Starting gRPC server with configuration: ");
+    println!("\t Listen IP: {}", args.listen_ip);
+    println!("\t Port: {}", args.port);
+    println!("\t Max history: {}", args.max_history);
 
 
     let server = Server::builder()
@@ -146,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     server.await?;
 
-    println!("Shutting down gracefully...");
+    println!("\nShutting down gracefully...");
 
     Ok(())
 }
