@@ -9,6 +9,8 @@ service Datastore {
     rpc Set(SetRequest) returns (SetResponse);
     // Applies every valid item and reports only the rejected ones.
     // Retrying a batch is safe: an item with the same key and timestamp_ns is applied once.
+    // A batch is not atomic: readers and subscribers can see some of its items before others.
+    // Changes to one key are always seen in the order they were applied.
     rpc SetBatch(SetBatchRequest) returns (SetBatchResponse);
     rpc Query(QueryRequest) returns (QueryResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
