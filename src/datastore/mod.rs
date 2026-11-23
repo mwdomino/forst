@@ -154,15 +154,22 @@ impl Datastore {
         let mut events = Vec::new();
         let mut applied = false;
         let mut wake = false;
+        // Freed after the lock is released, to keep the write lock hold short
+        let mut evicted = Vec::new();
 
         for (item, preserve_history) in valid {
             let key = item.key.clone();
             let event = publish.then(|| item.clone());
             let options = SetOptions::new().preserve_history(preserve_history);
-            let SetOutcome::Applied { schedule } = state.map.set(&key, item, Some(options)) else {
+            let SetOutcome::Applied {
+                schedule,
+                evicted: old,
+            } = state.map.set(&key, item, Some(options))
+            else {
                 continue;
             };
             applied = true;
+            evicted.extend(old);
             if let Some(at) = schedule {
                 wake |= state.ttl.push(at, key);
             }
@@ -178,6 +185,7 @@ impl Datastore {
             self.shared.commit(&mut state, events);
         }
         drop(state);
+        drop(evicted);
         if wake {
             self.shared.wake_reaper.notify_one();
         }
@@ -208,8 +216,12 @@ impl Datastore {
         self.shared.state.read().map.get(key).cloned()
     }
 
+    // Results are sorted by key segments; each key's history stays newest first.
     pub fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
-        self.shared.state.read().map.query(key, options)
+        let mut items = self.shared.state.read().map.query(key, options);
+        // Sort outside the lock; the stable sort keeps history order
+        items.sort_by(|a, b| a.key.split(DELIMITER).cmp(b.key.split(DELIMITER)));
+        items
     }
 
     pub fn delete(&self, key: &str) -> bool {

@@ -5,7 +5,11 @@ use super::{Item, NestedMap};
 #[derive(Debug, PartialEq, Eq)]
 pub enum SetOutcome {
     // `schedule` is set when the caller must add an expiry entry for this key at that time.
-    Applied { schedule: Option<i64> },
+    // `evicted` is the item this write replaced or pushed out of history.
+    Applied {
+        schedule: Option<i64>,
+        evicted: Option<Item>,
+    },
     // An item with the same timestamp is already stored.
     Duplicate,
     // Older than what is kept: the current item without history, or all kept history.
@@ -30,11 +34,14 @@ impl NestedMap {
         let timestamp = value.timestamp;
         let expires_at = value.expires_at;
         let items = &mut node.items;
+        let mut evicted = None;
 
         if !options.preserve_history {
             match items.front_mut() {
                 None => items.push_front(value),
-                Some(front) if timestamp > front.timestamp => *front = value,
+                Some(front) if timestamp > front.timestamp => {
+                    evicted = Some(std::mem::replace(front, value))
+                }
                 Some(front) if timestamp == front.timestamp => return SetOutcome::Duplicate,
                 Some(_) => return SetOutcome::Stale,
             }
@@ -51,7 +58,9 @@ impl NestedMap {
                 return SetOutcome::Stale;
             }
             items.insert(pos, value);
-            items.truncate(max_history);
+            if items.len() > max_history {
+                evicted = items.pop_back();
+            }
         }
 
         // Keep one pending expiry entry per node: add one only if this item expires first
@@ -59,7 +68,7 @@ impl NestedMap {
         if schedule.is_some() {
             node.scheduled_expiry = schedule;
         }
-        SetOutcome::Applied { schedule }
+        SetOutcome::Applied { schedule, evicted }
     }
 }
 
@@ -303,7 +312,10 @@ mod tests {
     #[test]
     fn test_set_without_history_is_last_write_wins() {
         let mut nm = NestedMap::new(1);
-        let applied = SetOutcome::Applied { schedule: None };
+        let applied = SetOutcome::Applied {
+            schedule: None,
+            evicted: None,
+        };
 
         assert_eq!(nm.set("k", item_at("k", b"new", 20), None), applied);
         assert_eq!(
@@ -325,17 +337,21 @@ mod tests {
             ..item_at("k", b"v", ts)
         };
 
-        assert_eq!(
+        assert!(matches!(
             nm.set("k", expiring(1, 100), None),
             SetOutcome::Applied {
-                schedule: Some(100)
+                schedule: Some(100),
+                ..
             }
-        );
+        ));
         // A later expiry needs no new entry: the pending one reschedules when it fires
-        assert_eq!(
+        assert!(matches!(
             nm.set("k", expiring(2, 200), None),
-            SetOutcome::Applied { schedule: None }
-        );
+            SetOutcome::Applied {
+                schedule: None,
+                evicted: Some(_)
+            }
+        ));
         assert_eq!(nm.expire("k", 100, 100), (vec![], Some(200)));
     }
 }

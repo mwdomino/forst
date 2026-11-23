@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, VecDeque};
+use foldhash::HashMap;
+use std::collections::VecDeque;
 
 pub mod config;
 pub mod delete;
@@ -11,7 +12,8 @@ pub mod test_helpers;
 // One node per key segment: "a.b.c" stores its items at children[a].children[b].children[c].
 #[derive(Debug)]
 pub struct NestedMap {
-    children: BTreeMap<String, NestedMap>,
+    // Unordered: a hash lookup per segment is much faster than a BTreeMap on ingest
+    children: HashMap<String, NestedMap>,
     // Newest timestamp first, at most max_history long
     items: VecDeque<Item>,
     max_history: usize,
@@ -20,7 +22,7 @@ pub struct NestedMap {
 }
 
 // Timestamps are nanoseconds since the Unix epoch. An item is identified by (key, timestamp).
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Item {
     pub key: String,
     pub value: Vec<u8>,
@@ -31,7 +33,7 @@ pub struct Item {
 impl NestedMap {
     pub fn new(max_history: usize) -> Self {
         NestedMap {
-            children: BTreeMap::new(),
+            children: HashMap::default(),
             items: VecDeque::new(),
             max_history,
             scheduled_expiry: None,
