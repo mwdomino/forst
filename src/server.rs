@@ -26,6 +26,15 @@ struct Args {
     // Max history for datastore
     #[arg(short, long, default_value_t = 5)]
     max_history: usize,
+
+    // Number of shards; 0 means one per CPU
+    #[arg(long, default_value_t = 0)]
+    shards: usize,
+
+    // Key segments that pick a key's shard; keys sharing them share a shard.
+    // 5 fits net.company.datacenter.rack.switchname.<path>
+    #[arg(long, default_value_t = 5)]
+    shard_depth: usize,
 }
 
 #[tokio::main]
@@ -35,10 +44,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Starting gRPC server with configuration: ");
     println!("\t Listen IP: {}", args.listen_ip);
     println!("\t Port: {}", args.port);
+    let shards = match args.shards {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    };
     println!("\t Max history: {}", args.max_history);
+    println!("\t Shards: {} (depth {})", shards, args.shard_depth);
 
     let listener = TcpListener::bind(SocketAddr::new(args.listen_ip, args.port)).await?;
-    let datastore = Arc::new(Datastore::new(args.max_history));
+    let datastore = Arc::new(Datastore::with_shards(
+        args.max_history,
+        shards,
+        args.shard_depth,
+    ));
     service::serve(listener, datastore, async {
         signal::ctrl_c().await.expect("failed to listen for event");
     })

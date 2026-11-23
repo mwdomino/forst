@@ -898,11 +898,13 @@ func (x *SubscribeRequest) GetPattern() string {
 
 type SubscribeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Log sequence number of the change. 0 for initial state.
+	// Log sequence number of the change. It increases within each shard. 0 for initial state.
 	Lsn    uint64   `protobuf:"varint,1,opt,name=lsn,proto3" json:"lsn,omitempty"`
 	Events []*Event `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
 	// True on the one message that ends the initial state.
-	Sync          bool `protobuf:"varint,3,opt,name=sync,proto3" json:"sync,omitempty"`
+	Sync bool `protobuf:"varint,3,opt,name=sync,proto3" json:"sync,omitempty"`
+	// The shard that made the change. Order between shards is not defined.
+	Shard         uint32 `protobuf:"varint,4,opt,name=shard,proto3" json:"shard,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -956,6 +958,13 @@ func (x *SubscribeResponse) GetSync() bool {
 		return x.Sync
 	}
 	return false
+}
+
+func (x *SubscribeResponse) GetShard() uint32 {
+	if x != nil {
+		return x.Shard
+	}
+	return 0
 }
 
 type Event struct {
@@ -1063,11 +1072,12 @@ const file_datastore_proto_rawDesc = "" +
 	"\x15DeleteAtIndexResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\",\n" +
 	"\x10SubscribeRequest\x12\x18\n" +
-	"\apattern\x18\x01 \x01(\tR\apattern\"c\n" +
+	"\apattern\x18\x01 \x01(\tR\apattern\"y\n" +
 	"\x11SubscribeResponse\x12\x10\n" +
 	"\x03lsn\x18\x01 \x01(\x04R\x03lsn\x12(\n" +
 	"\x06events\x18\x02 \x03(\v2\x10.datastore.EventR\x06events\x12\x12\n" +
-	"\x04sync\x18\x03 \x01(\bR\x04sync\"\x80\x01\n" +
+	"\x04sync\x18\x03 \x01(\bR\x04sync\x12\x14\n" +
+	"\x05shard\x18\x04 \x01(\rR\x05shard\"\x80\x01\n" +
 	"\x05Event\x12)\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x15.datastore.Event.KindR\x04kind\x12#\n" +
 	"\x04item\x18\x02 \x01(\v2\x0f.datastore.ItemR\x04item\"'\n" +

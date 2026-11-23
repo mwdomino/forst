@@ -2,14 +2,13 @@ use std::future::Future;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::server::TcpIncoming;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::datastore::{self, Datastore, EventKind, SetItem};
+use crate::datastore::{self, Change, Datastore, EventKind, SetItem};
 use crate::nestedmap::options::GetOptions;
 use proto::datastore_server::{Datastore as DatastoreTrait, DatastoreServer};
 use proto::*;
@@ -166,7 +165,8 @@ impl DatastoreTrait for Service {
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let pattern = request.into_inner().pattern;
         let mut sub = self.datastore.subscribe(&pattern);
-        // Small buffer: a slow client fills it, then lags on the change channel and is cut off
+        // Small buffers: a slow client fills them, then lags on a shard and is cut off
+        let mut changes = sub.changes(&pattern, 16);
         let (tx, rx) = mpsc::channel(16);
 
         tokio::spawn(async move {
@@ -183,6 +183,7 @@ impl DatastoreTrait for Service {
                     lsn: 0,
                     events,
                     sync: false,
+                    shard: 0,
                 };
                 if tx.send(Ok(msg)).await.is_err() {
                     return;
@@ -192,29 +193,24 @@ impl DatastoreTrait for Service {
                 lsn: 0,
                 events: Vec::new(),
                 sync: true,
+                shard: 0,
             };
             if tx.send(Ok(sync)).await.is_err() {
                 return;
             }
 
             loop {
-                let msg = match sub.changes.recv().await {
-                    Ok(batch) => {
-                        let events: Vec<Event> =
-                            batch.matching(&pattern).map(event_to_proto).collect();
-                        if events.is_empty() {
-                            continue;
-                        }
-                        Ok(SubscribeResponse {
-                            lsn: batch.lsn,
-                            events,
-                            sync: false,
-                        })
-                    }
-                    Err(RecvError::Lagged(n)) => Err(Status::aborted(format!(
-                        "subscriber lagged {n} change batches behind; subscribe again"
-                    ))),
-                    Err(RecvError::Closed) => return,
+                let msg = match changes.recv().await {
+                    Some(Change::Events { shard, lsn, events }) => Ok(SubscribeResponse {
+                        lsn,
+                        events: events.iter().map(event_to_proto).collect(),
+                        sync: false,
+                        shard,
+                    }),
+                    Some(Change::Lagged) => Err(Status::aborted(
+                        "subscriber fell too far behind; subscribe again",
+                    )),
+                    None => return,
                 };
                 let lagged = msg.is_err();
                 if tx.send(msg).await.is_err() || lagged {

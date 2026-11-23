@@ -36,6 +36,8 @@ type DatastoreClient interface {
 	Set(ctx context.Context, in *SetRequest, opts ...grpc.CallOption) (*SetResponse, error)
 	// Applies every valid item and reports only the rejected ones.
 	// Retrying a batch is safe: an item with the same key and timestamp_ns is applied once.
+	// A batch is not atomic: readers and subscribers can see some of its items before others.
+	// Changes to one key are always seen in the order they were applied.
 	SetBatch(ctx context.Context, in *SetBatchRequest, opts ...grpc.CallOption) (*SetBatchResponse, error)
 	Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (*QueryResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
@@ -140,6 +142,8 @@ type DatastoreServer interface {
 	Set(context.Context, *SetRequest) (*SetResponse, error)
 	// Applies every valid item and reports only the rejected ones.
 	// Retrying a batch is safe: an item with the same key and timestamp_ns is applied once.
+	// A batch is not atomic: readers and subscribers can see some of its items before others.
+	// Changes to one key are always seen in the order they were applied.
 	SetBatch(context.Context, *SetBatchRequest) (*SetBatchResponse, error)
 	Query(context.Context, *QueryRequest) (*QueryResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)

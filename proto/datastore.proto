@@ -104,11 +104,13 @@ message SubscribeRequest {
 }
 
 message SubscribeResponse {
-    // Log sequence number of the change. 0 for initial state.
+    // Log sequence number of the change. It increases within each shard. 0 for initial state.
     uint64 lsn = 1;
     repeated Event events = 2;
     // True on the one message that ends the initial state.
     bool sync = 3;
+    // The shard that made the change. Order between shards is not defined.
+    uint32 shard = 4;
 }
 
 message Event {

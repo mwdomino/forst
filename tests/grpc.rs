@@ -19,7 +19,8 @@ const MAX_HISTORY: usize = 100;
 async fn start_server() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let datastore = Arc::new(Datastore::new(MAX_HISTORY));
+    // Keys in these tests are "<prefix>.<device>.<metric>": shard by the first two segments
+    let datastore = Arc::new(Datastore::with_shards(MAX_HISTORY, 4, 2));
     tokio::spawn(serve(listener, datastore, std::future::pending()));
     addr
 }

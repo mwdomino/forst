@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::{now_ns, until, Event, EventKind, Shared};
+use super::{now_ns, until, Event, EventKind, Shard};
 
 // Max keys checked per write-lock hold, so a mass expiry does not stall readers.
 const REAP_BATCH: usize = 1024;
@@ -47,7 +47,7 @@ impl ExpirationHeap {
 }
 
 // Sleeps until the next expiry (or until woken for an earlier one) and removes expired items.
-pub(super) async fn reap(shared: Arc<Shared>) {
+pub(super) async fn reap(shared: Arc<Shard>) {
     loop {
         let now = now_ns();
         let (checked, next) = {

@@ -34,11 +34,18 @@ var (
 	subs     = flag.Int("subscribers", 0, "subscribers to run during the timed run")
 	pattern  = flag.String("pattern", ">", "subscription pattern")
 	valSize  = flag.Int("valuesize", 10, "bytes per value")
+	devices  = flag.Int("devices", 0, "use gNMI-like keys net.co.dcX.rackY.swZ.<path> over this many switches; 0 = ds.yo.<branch>.k<n>")
 )
 
 const branches = 1000
 
-func key(r int) string { return fmt.Sprintf("ds.yo.%d.k%d", r%branches, r) }
+func key(r int) string {
+	if *devices > 0 {
+		d := r % *devices
+		return fmt.Sprintf("net.co.dc%d.rack%d.sw%d.if%d.ctr", d%4, d%40, d, r / *devices)
+	}
+	return fmt.Sprintf("ds.yo.%d.k%d", r%branches, r)
+}
 
 func main() {
 	flag.Parse()

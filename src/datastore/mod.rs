@@ -1,8 +1,11 @@
+use std::hash::BuildHasher;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use foldhash::fast::FixedState;
 use parking_lot::RwLock;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast, mpsc, Notify};
 
 use crate::nestedmap::config::{COLLECTOR, DELIMITER, WILDCARD};
 use crate::nestedmap::options::{GetOptions, SetOptions};
@@ -15,7 +18,7 @@ pub use crate::nestedmap::Item;
 
 pub mod expiration;
 
-// Change batches buffered per subscriber before it is cut off as lagged.
+// Change batches buffered per subscriber and shard before it is cut off as lagged.
 const SUBSCRIBER_BUFFER: usize = 1024;
 
 // One item to write. Timestamps and ttl are nanoseconds.
@@ -49,26 +52,73 @@ pub struct Event {
     pub item: Item,
 }
 
-// All changes made under one write lock hold, in order.
+// All changes made under one shard's write lock hold, in order.
 #[derive(Debug)]
-pub struct ChangeBatch {
-    pub lsn: u64,
-    pub events: Vec<Event>,
+struct ChangeBatch {
+    shard: u32,
+    lsn: u64,
+    events: Vec<Event>,
 }
 
-impl ChangeBatch {
-    pub fn matching<'a>(&'a self, pattern: &'a str) -> impl Iterator<Item = &'a Event> {
-        self.events
-            .iter()
-            .filter(move |e| matches(pattern, &e.item.key))
-    }
+// The changes from one shard's change batch that match a subscription.
+#[derive(Debug)]
+pub enum Change {
+    Events {
+        shard: u32,
+        // Increases within a shard
+        lsn: u64,
+        events: Vec<Event>,
+    },
+    // The subscriber fell too far behind. Nothing more follows: subscribe again.
+    Lagged,
 }
 
 pub struct Subscription {
     // The newest matching item per key at the moment of subscribing
     pub snapshot: Vec<Item>,
-    // Every change after the snapshot, exactly once. Lagged means: subscribe again.
-    pub changes: broadcast::Receiver<Arc<ChangeBatch>>,
+    // One per shard the pattern can match
+    receivers: Vec<broadcast::Receiver<Arc<ChangeBatch>>>,
+}
+
+impl Subscription {
+    // Delivers every change after the snapshot that matches `pattern`, exactly once.
+    // One task per shard filters, so shards are filtered in parallel. Order holds within
+    // a shard, not across shards.
+    pub fn changes(&mut self, pattern: &str, buffer: usize) -> mpsc::Receiver<Change> {
+        let (tx, rx) = mpsc::channel(buffer);
+        for mut receiver in std::mem::take(&mut self.receivers) {
+            let (tx, pattern) = (tx.clone(), pattern.to_string());
+            tokio::spawn(async move {
+                loop {
+                    let change = match receiver.recv().await {
+                        Ok(batch) => {
+                            let events: Vec<Event> = batch
+                                .events
+                                .iter()
+                                .filter(|e| matches(&pattern, &e.item.key))
+                                .cloned()
+                                .collect();
+                            if events.is_empty() {
+                                continue;
+                            }
+                            Change::Events {
+                                shard: batch.shard,
+                                lsn: batch.lsn,
+                                events,
+                            }
+                        }
+                        Err(RecvError::Lagged(_)) => Change::Lagged,
+                        Err(RecvError::Closed) => return,
+                    };
+                    let lagged = matches!(change, Change::Lagged);
+                    if tx.send(change).await.is_err() || lagged {
+                        return;
+                    }
+                }
+            });
+        }
+        rx
+    }
 }
 
 #[derive(Debug)]
@@ -79,14 +129,16 @@ struct State {
     lsn: u64,
 }
 
+// An independent part of the key space with its own lock, expiry heap and reaper.
 #[derive(Debug)]
-struct Shared {
+struct Shard {
+    id: u32,
     state: RwLock<State>,
     wake_reaper: Notify,
     changes: broadcast::Sender<Arc<ChangeBatch>>,
 }
 
-impl Shared {
+impl Shard {
     // Commits one change batch. Call with the write lock held, so subscribers that register
     // under the read lock see each batch either in their snapshot or as a change, never both.
     fn commit(&self, state: &mut State, events: Vec<Event>) {
@@ -94,6 +146,7 @@ impl Shared {
         if !events.is_empty() {
             // Fails only when there are no subscribers
             let _ = self.changes.send(Arc::new(ChangeBatch {
+                shard: self.id,
                 lsn: state.lsn,
                 events,
             }));
@@ -103,59 +156,16 @@ impl Shared {
     fn has_subscribers(&self) -> bool {
         self.changes.receiver_count() > 0
     }
-}
 
-#[derive(Debug)]
-pub struct Datastore {
-    shared: Arc<Shared>,
-}
-
-pub fn now_ns() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos() as i64)
-}
-
-impl Datastore {
-    // Must be called inside a tokio runtime: it spawns the expiration task.
-    pub fn new(max_history: usize) -> Self {
-        let shared = Arc::new(Shared {
-            state: RwLock::new(State {
-                map: NestedMap::new(max_history),
-                ttl: ExpirationHeap::new(),
-                lsn: 0,
-            }),
-            wake_reaper: Notify::new(),
-            changes: broadcast::channel(SUBSCRIBER_BUFFER).0,
-        });
-        tokio::spawn(expiration::reap(shared.clone()));
-        Datastore { shared }
-    }
-
-    // Applies every valid item under one write lock and returns the invalid ones.
-    // An item whose (key, timestamp) is already stored, or that is older than what is kept,
-    // is skipped silently, so retrying a batch is safe.
-    pub fn set_batch(&self, items: Vec<SetItem>) -> Vec<Rejected> {
-        let now = now_ns();
-        let mut rejected = Vec::new();
-        let mut valid = Vec::with_capacity(items.len());
-        for (index, item) in items.into_iter().enumerate() {
-            match validate(item, now) {
-                Ok(v) => valid.push(v),
-                Err(reason) => rejected.push(Rejected { index, reason }),
-            }
-        }
-        if valid.is_empty() {
-            return rejected;
-        }
-
+    // Applies validated items under one write lock.
+    fn apply(&self, valid: Vec<(Item, bool)>) {
         // Copy items for subscribers before locking, to keep the write lock hold short.
         // The check repeats under the lock, so a subscriber that just joined misses nothing.
         let clone_all = |valid: &[(Item, bool)]| valid.iter().map(|(i, _)| i.clone()).collect();
-        let copies: Option<Vec<Item>> = self.shared.has_subscribers().then(|| clone_all(&valid));
+        let copies: Option<Vec<Item>> = self.has_subscribers().then(|| clone_all(&valid));
 
-        let mut state = self.shared.state.write();
-        let copies: Vec<Item> = match (self.shared.has_subscribers(), copies) {
+        let mut state = self.state.write();
+        let copies: Vec<Item> = match (self.has_subscribers(), copies) {
             (false, _) => Vec::new(),
             (true, Some(copies)) => copies,
             (true, None) => clone_all(&valid),
@@ -191,12 +201,127 @@ impl Datastore {
         }
 
         if applied {
-            self.shared.commit(&mut state, events);
+            self.commit(&mut state, events);
         }
         drop(state);
         drop(evicted);
         if wake {
-            self.shared.wake_reaper.notify_one();
+            self.wake_reaper.notify_one();
+        }
+    }
+
+    // Runs `remove` under the write lock and publishes what it removed as Delete events.
+    fn remove(&self, remove: impl FnOnce(&mut NestedMap) -> Vec<Item>) -> bool {
+        let mut state = self.state.write();
+        let removed = remove(&mut state.map);
+        if removed.is_empty() {
+            return false;
+        }
+        let events = if self.has_subscribers() {
+            let kind = EventKind::Delete;
+            removed
+                .into_iter()
+                .map(|item| Event { kind, item })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        self.commit(&mut state, events);
+        true
+    }
+}
+
+// Splits the key space into shards by a hash of each key's first `depth` segments.
+// Keys that share those segments (for example one device) share a shard, so their order
+// and prefix queries stay within it. Shorter keys hash as a whole.
+#[derive(Debug)]
+pub struct Datastore {
+    shards: Vec<Arc<Shard>>,
+    depth: usize,
+}
+
+pub fn now_ns() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as i64)
+}
+
+impl Datastore {
+    // One shard. Must be called inside a tokio runtime: it spawns the expiration task.
+    pub fn new(max_history: usize) -> Self {
+        Self::with_shards(max_history, 1, 1)
+    }
+
+    // Must be called inside a tokio runtime: it spawns one expiration task per shard.
+    pub fn with_shards(max_history: usize, shards: usize, depth: usize) -> Self {
+        let shards: Vec<Arc<Shard>> = (0..shards.max(1))
+            .map(|id| {
+                let shard = Arc::new(Shard {
+                    id: id as u32,
+                    state: RwLock::new(State {
+                        map: NestedMap::new(max_history),
+                        ttl: ExpirationHeap::new(),
+                        lsn: 0,
+                    }),
+                    wake_reaper: Notify::new(),
+                    changes: broadcast::channel(SUBSCRIBER_BUFFER).0,
+                });
+                tokio::spawn(expiration::reap(shard.clone()));
+                shard
+            })
+            .collect();
+        Datastore {
+            shards,
+            depth: depth.max(1),
+        }
+    }
+
+    // The shard that owns `key`.
+    fn shard_of(&self, key: &str) -> &Arc<Shard> {
+        if self.shards.len() == 1 {
+            return &self.shards[0];
+        }
+        // Stable seed: shard placement must not change between runs
+        let prefix = match key.match_indices(DELIMITER).nth(self.depth - 1) {
+            Some((end, _)) => &key[..end],
+            None => key,
+        };
+        let hash = FixedState::with_seed(0).hash_one(prefix);
+        &self.shards[(hash % self.shards.len() as u64) as usize]
+    }
+
+    // The shards that can hold keys matching `pattern`, in index order.
+    // One shard when the pattern's first `depth` segments are literal, else all of them.
+    fn shards_for(&self, pattern: &str) -> Vec<&Arc<Shard>> {
+        let literal = pattern
+            .split(DELIMITER)
+            .take(self.depth)
+            .all(|s| s != WILDCARD && s != COLLECTOR);
+        if literal {
+            vec![self.shard_of(pattern)]
+        } else {
+            self.shards.iter().collect()
+        }
+    }
+
+    // Applies every valid item and returns the invalid ones. Each shard applies its part
+    // under its own write lock, so other readers can see the parts at different moments.
+    // An item whose (key, timestamp) is already stored, or that is older than what is kept,
+    // is skipped silently, so retrying a batch is safe.
+    pub fn set_batch(&self, items: Vec<SetItem>) -> Vec<Rejected> {
+        let now = now_ns();
+        let mut rejected = Vec::new();
+        let mut per_shard: Vec<Vec<(Item, bool)>> = vec![Vec::new(); self.shards.len()];
+        for (index, item) in items.into_iter().enumerate() {
+            match validate(item, now) {
+                Ok(v) => per_shard[self.shard_of(&v.0.key).id as usize].push(v),
+                Err(reason) => rejected.push(Rejected { index, reason }),
+            }
+        }
+        for (shard, valid) in self.shards.iter().zip(per_shard) {
+            if !valid.is_empty() {
+                shard.apply(valid);
+            }
         }
         rejected
     }
@@ -222,51 +347,58 @@ impl Datastore {
     }
 
     pub fn get(&self, key: &str) -> Option<Item> {
-        self.shared.state.read().map.get(key).cloned()
+        self.shard_of(key).state.read().map.get(key).cloned()
     }
 
     // Results are sorted by key segments; each key's history stays newest first.
+    // Each shard is read at its own moment.
     pub fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
-        let mut items = self.shared.state.read().map.query(key, options);
+        let history = options.map(|o| o.history_count);
+        let mut items = Vec::new();
+        for shard in self.shards_for(key) {
+            let options = history.map(|history_count| GetOptions { history_count });
+            items.extend(shard.state.read().map.query(key, options));
+        }
         // Sort outside the lock; the stable sort keeps history order
         items.sort_by(|a, b| a.key.split(DELIMITER).cmp(b.key.split(DELIMITER)));
         items
     }
 
+    // Deletes `key` and everything below it.
     pub fn delete(&self, key: &str) -> bool {
-        self.remove(|map| map.delete(key))
+        // A key shorter than the shard depth can have descendants in every shard
+        let shards = if key.split(DELIMITER).count() >= self.depth {
+            vec![self.shard_of(key)]
+        } else {
+            self.shards.iter().collect()
+        };
+        let mut deleted = false;
+        for shard in shards {
+            deleted |= shard.remove(|map| map.delete(key));
+        }
+        deleted
     }
 
     pub fn delete_at_index(&self, key: &str, index: usize) -> bool {
-        self.remove(|map| map.delete_at_index(key, index).into_iter().collect())
+        self.shard_of(key)
+            .remove(|map| map.delete_at_index(key, index).into_iter().collect())
     }
 
     pub fn subscribe(&self, pattern: &str) -> Subscription {
-        let state = self.shared.state.read();
+        // Hold every involved shard's read lock (in index order; writers hold one lock at
+        // a time, so this cannot deadlock) to make the snapshot one point in time.
+        let shards = self.shards_for(pattern);
+        let guards: Vec<_> = shards.iter().map(|shard| shard.state.read()).collect();
         Subscription {
-            changes: self.shared.changes.subscribe(),
-            snapshot: state.map.query(pattern, None),
+            receivers: shards
+                .iter()
+                .map(|shard| shard.changes.subscribe())
+                .collect(),
+            snapshot: guards
+                .iter()
+                .flat_map(|state| state.map.query(pattern, None))
+                .collect(),
         }
-    }
-
-    // Runs `remove` under the write lock and publishes what it removed as Delete events.
-    fn remove(&self, remove: impl FnOnce(&mut NestedMap) -> Vec<Item>) -> bool {
-        let mut state = self.shared.state.write();
-        let removed = remove(&mut state.map);
-        if removed.is_empty() {
-            return false;
-        }
-        let events = if self.shared.has_subscribers() {
-            let kind = EventKind::Delete;
-            removed
-                .into_iter()
-                .map(|item| Event { kind, item })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        self.shared.commit(&mut state, events);
-        true
     }
 }
 
@@ -313,7 +445,6 @@ fn until(at: i64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
     use tokio::time::sleep;
 
@@ -321,6 +452,27 @@ mod tests {
         let opts = SetOptions::new().ttl(Duration::from_millis(ms));
         ds.set(key.to_string(), b"abc".to_vec(), Some(opts))
             .unwrap();
+    }
+
+    // Receives changes until none arrive for 100ms.
+    async fn collect(changes: &mut mpsc::Receiver<Change>) -> Vec<Change> {
+        let mut out = Vec::new();
+        let idle = Duration::from_millis(100);
+        while let Ok(Some(change)) = tokio::time::timeout(idle, changes.recv()).await {
+            out.push(change);
+        }
+        out
+    }
+
+    fn event_keys(changes: &[Change]) -> Vec<(EventKind, String)> {
+        let mut keys = Vec::new();
+        for change in changes {
+            let Change::Events { events, .. } = change else {
+                panic!("lagged");
+            };
+            keys.extend(events.iter().map(|e| (e.kind, e.item.key.clone())));
+        }
+        keys
     }
 
     fn item(key: &str, ts: i64) -> SetItem {
@@ -377,13 +529,13 @@ mod tests {
         set_ttl(&ds, "k", 50);
         set_ttl(&ds, "k", 150);
         set_ttl(&ds, "k", 150);
-        assert_eq!(ds.shared.state.read().ttl.len(), 1);
+        assert_eq!(ds.shards[0].state.read().ttl.len(), 1);
 
         sleep(Duration::from_millis(80)).await;
         assert!(ds.get("k").is_some());
         sleep(Duration::from_millis(120)).await;
         assert!(ds.get("k").is_none());
-        assert_eq!(ds.shared.state.read().ttl.len(), 0);
+        assert_eq!(ds.shards[0].state.read().ttl.len(), 0);
     }
 
     #[tokio::test]
@@ -423,6 +575,7 @@ mod tests {
         let mut sub = ds.subscribe("dev.*.cpu");
         assert_eq!(sub.snapshot.len(), 1);
         assert_eq!(sub.snapshot[0].key, "dev.r1.cpu");
+        let mut changes = sub.changes("dev.*.cpu", 64);
 
         ds.set_batch(vec![item("dev.r2.cpu", 2), item("dev.r2.mem", 2)]);
         ds.delete("dev.r1");
@@ -434,23 +587,7 @@ mod tests {
         .unwrap();
         sleep(Duration::from_millis(60)).await;
 
-        let mut seen = Vec::new();
-        let mut last_lsn = 0;
-        loop {
-            match sub.changes.try_recv() {
-                Ok(batch) => {
-                    assert!(batch.lsn > last_lsn);
-                    last_lsn = batch.lsn;
-                    seen.extend(
-                        batch
-                            .matching("dev.*.cpu")
-                            .map(|e| (e.kind, e.item.key.clone())),
-                    );
-                }
-                Err(TryRecvError::Empty) => break,
-                Err(e) => panic!("{e:?}"),
-            }
-        }
+        let seen = event_keys(&collect(&mut changes).await);
         let k = |s: &str| s.to_string();
         assert_eq!(
             seen,
@@ -467,7 +604,15 @@ mod tests {
     // nothing missed between snapshot and changes, nothing applied twice.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_subscribe_during_writes_has_no_gap() {
-        let ds = Arc::new(Datastore::new(1));
+        subscribe_during_writes(Arc::new(Datastore::new(1))).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_subscribe_during_writes_has_no_gap_sharded() {
+        subscribe_during_writes(Arc::new(Datastore::with_shards(1, 4, 2))).await;
+    }
+
+    async fn subscribe_during_writes(ds: Arc<Datastore>) {
         let writer = {
             let ds = ds.clone();
             tokio::task::spawn_blocking(move || {
@@ -493,10 +638,19 @@ mod tests {
         );
 
         // Read concurrently with the writer until it has been quiet for a while
+        let mut changes = sub.changes(">", 64);
         let idle = Duration::from_millis(200);
-        while let Ok(change) = tokio::time::timeout(idle, sub.changes.recv()).await {
-            let batch = change.expect("lagged; raise SUBSCRIBER_BUFFER");
-            for e in &batch.events {
+        let mut last_lsn = std::collections::HashMap::new();
+        while let Ok(Some(change)) = tokio::time::timeout(idle, changes.recv()).await {
+            let Change::Events { shard, lsn, events } = change else {
+                panic!("lagged; raise SUBSCRIBER_BUFFER");
+            };
+            let prev_lsn = last_lsn.insert(shard, lsn);
+            assert!(
+                prev_lsn.is_none_or(|p| p < lsn),
+                "lsn not increasing per shard"
+            );
+            for e in &events {
                 let prev = view.insert(e.item.key.clone(), e.item.timestamp);
                 assert!(
                     prev.is_none_or(|p| p < e.item.timestamp),
@@ -517,13 +671,41 @@ mod tests {
     #[tokio::test]
     async fn test_slow_subscriber_lags() {
         let ds = Datastore::new(1);
-        let mut sub = ds.subscribe(">");
+        let mut changes = ds.subscribe(">").changes(">", 1);
         for ts in 1..=(SUBSCRIBER_BUFFER as i64 + 1) {
             ds.set_batch(vec![item("k", ts)]);
         }
-        assert!(matches!(
-            sub.changes.recv().await,
-            Err(RecvError::Lagged(_))
-        ));
+        assert!(matches!(changes.recv().await, Some(Change::Lagged)));
+    }
+
+    #[tokio::test]
+    async fn test_sharded_routing() {
+        let ds = Datastore::with_shards(1, 8, 2);
+        for d in 0..50 {
+            ds.set_batch(vec![
+                item(&format!("dc.sw{d}.cpu"), 1),
+                item(&format!("dc.sw{d}.mem"), 1),
+            ]);
+        }
+
+        let used: std::collections::HashSet<u32> = (0..50)
+            .map(|d| ds.shard_of(&format!("dc.sw{d}")).id)
+            .collect();
+        assert!(used.len() > 4, "keys did not spread: {used:?}");
+        // One device's keys share a shard
+        assert_eq!(ds.shard_of("dc.sw1.cpu").id, ds.shard_of("dc.sw1.mem").id);
+        assert_eq!(ds.shards_for("dc.sw1.>").len(), 1);
+        assert_eq!(ds.shards_for("dc.*.cpu").len(), 8);
+
+        assert_eq!(ds.query("dc.*.cpu", None).len(), 50);
+        assert_eq!(ds.query("dc.sw1.>", None).len(), 2);
+        let mut sub = ds.subscribe("dc.*.cpu");
+        assert_eq!(sub.snapshot.len(), 50);
+        let mut changes = sub.changes("dc.*.cpu", 64);
+
+        // A key shorter than the shard depth spans every shard
+        assert!(ds.delete("dc"));
+        assert!(ds.query(">", None).is_empty());
+        assert_eq!(event_keys(&collect(&mut changes).await).len(), 50);
     }
 }
