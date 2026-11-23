@@ -21,7 +21,7 @@ for s in "${scenarios[@]}"; do
   sleep 0.5
   echo "== ${s%%|*}"
   # shellcheck disable=SC2086
-  ../target/gobench ${s#*|} 2>/dev/null | tail -2
+  ../target/gobench ${s#*|} 2>/dev/null | grep -E "^(elapsed|p50)"
   echo "server cpu: $(ps -o time= -p $pid)"
   kill -INT $pid; wait $pid || true
 done
