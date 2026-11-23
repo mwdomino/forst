@@ -48,8 +48,8 @@ impl DatastoreTrait for MyDatastore {
             Some(item) => {
                 let reply = GetResponse {
                     item: Some(Item {
-                        key: item.key.clone(),
-                        value: item.value.clone(),
+                        key: item.key,
+                        value: item.value,
                     }),
                 };
 
@@ -70,7 +70,7 @@ impl DatastoreTrait for MyDatastore {
             ttl: std::time::Duration::from_secs(opts.ttl as u64),
         });
 
-        self.datastore.set(req.key, &req.value, options);
+        self.datastore.set(req.key, req.value, options);
 
         let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
@@ -106,8 +106,8 @@ impl DatastoreTrait for MyDatastore {
             items: items
                 .into_iter()
                 .map(|item| Item {
-                    key: item.key.clone(),
-                    value: item.value.clone(),
+                    key: item.key,
+                    value: item.value,
                 })
                 .collect(),
         };

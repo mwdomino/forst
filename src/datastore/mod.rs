@@ -41,19 +41,19 @@ impl Datastore {
         datastore
     }
 
-    pub fn set(&self, key: String, value: &[u8], options: Option<SetOptions>) {
+    pub fn set(&self, key: String, value: Vec<u8>, options: Option<SetOptions>) {
         let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
         let ttl = options.as_ref().map(|o| o.ttl).filter(|ttl| !ttl.is_zero());
 
         let new_item = Item {
             key: key.clone(),
-            value: value.to_vec(),
+            value,
             timestamp: SystemTime::now(),
             id,
         };
 
         // Insert before scheduling expiry, so the reaper never misses the item.
-        self.map.write().set(&key, &new_item, options);
+        self.map.write().set(&key, new_item, options);
 
         if let Some(ttl) = ttl {
             let expires_at = Instant::now() + ttl;
@@ -83,7 +83,7 @@ mod tests {
 
     fn set_ttl(ds: &Datastore, key: &str, ms: u64) {
         let opts = SetOptions::new().ttl(Duration::from_millis(ms));
-        ds.set(key.to_string(), b"abc", Some(opts));
+        ds.set(key.to_string(), b"abc".to_vec(), Some(opts));
     }
 
     #[tokio::test]

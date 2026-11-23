@@ -4,41 +4,38 @@ use super::{Item, NestedMap, NestedValue};
 use std::collections::VecDeque;
 
 impl NestedMap {
-    pub fn set(&mut self, keys: &str, value: &Item, options: Option<SetOptions>) {
+    pub fn set(&mut self, keys: &str, value: Item, options: Option<SetOptions>) {
         let options = options.unwrap_or_default();
+        let max_history = self.max_history;
         let mut current_map = &mut self.data;
 
-        // Traverse to the appropriate node
+        // Traverse to the appropriate node, allocating a key only for new nodes
         for key in keys.split(DELIMITER) {
-            current_map = current_map
-                .entry(key.to_string())
-                .or_insert_with(|| NestedValue::Map(NestedMap::new(self.max_history)))
-                .as_map_mut();
+            if !current_map.contains_key(key) {
+                current_map.insert(key.to_owned(), NestedValue::Map(NestedMap::new(max_history)));
+            }
+            current_map = current_map.get_mut(key).unwrap().as_map_mut();
         }
 
         // Access or create the items list at the final key under VALUE_KEY
-        let items = current_map
-            .entry(VALUE_KEY.to_string())
-            .or_insert_with(|| NestedValue::Items(VecDeque::new()));
+        if !current_map.contains_key(VALUE_KEY) {
+            current_map.insert(VALUE_KEY.to_owned(), NestedValue::Items(VecDeque::new()));
+        }
 
-        if let NestedValue::Items(items) = items {
-            let length: usize = items.len();
-
+        if let Some(NestedValue::Items(items)) = current_map.get_mut(VALUE_KEY) {
             if !options.preserve_history {
-                if length > 0 {
-                    items[0] = value.clone();
-                } else {
-                    items.insert(0, value.clone());
+                match items.front_mut() {
+                    Some(front) => *front = value,
+                    None => items.push_front(value),
                 }
-
                 return;
             }
 
             // Prepend new item to the list to keep the newest items at the start
-            if length >= self.max_history {
+            if items.len() >= max_history {
                 items.pop_back(); // Remove the oldest item if we exceed the max history
             }
-            items.push_front(value.clone()); // Insert new item at the start of the list
+            items.push_front(value);
         }
     }
 }
@@ -60,7 +57,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", &create_item("a", b"the value a"), None);
+                    nm.set("a", create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -69,7 +66,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
+                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -80,7 +77,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     nm.set(
                         "a.b.c.d.e.f",
-                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
+                        create_item("a.b.c.d.e.f", b"the value abcdef"),
                         None,
                     );
                 }),
@@ -101,7 +98,7 @@ mod tests {
                 for i in 1..=7 {
                     nm.set(
                         "a.b.c.d",
-                        &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                        create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                         Some(SetOptions::new().preserve_history(false)),
                     );
                 }
@@ -123,7 +120,7 @@ mod tests {
                     for i in 1..=7 {
                         nm.set(
                             "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -144,7 +141,7 @@ mod tests {
                     for i in 1..=3 {
                         nm.set(
                             "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -163,7 +160,7 @@ mod tests {
                     for i in 1..=5 {
                         nm.set(
                             "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -190,27 +187,27 @@ mod tests {
             setup: Box::new(|nm| {
                 nm.set(
                     "a.b.c.d",
-                    &create_item("a.b.c.d", b"value1"),
+                    create_item("a.b.c.d", b"value1"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    &create_item("a.b.c.d", b"value2"),
+                    create_item("a.b.c.d", b"value2"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    &create_item("a.b.c.d", b"value3"),
+                    create_item("a.b.c.d", b"value3"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    &create_item("a.b.c.d", b"value4"),
+                    create_item("a.b.c.d", b"value4"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
                     "a.b.c.d",
-                    &create_item("a.b.c.d", b"value5"),
+                    create_item("a.b.c.d", b"value5"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
             }),
@@ -234,7 +231,7 @@ mod tests {
         let mut nm_locked = nm.lock().unwrap();
         nm_locked.set(
             "a.b.c",
-            &create_item("a.b.c", b"abc"),
+            create_item("a.b.c", b"abc"),
             Some(SetOptions::new().ttl(Duration::from_millis(100))),
         );
 
