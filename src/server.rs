@@ -2,7 +2,7 @@ use std::net::{IpAddr, SocketAddr};
 
 use mimalloc::MiMalloc;
 
-use clap::{Parser, value_parser};
+use clap::{value_parser, Parser};
 
 use tokio::signal;
 use tokio::sync::oneshot;
@@ -65,10 +65,16 @@ impl DatastoreTrait for MyDatastore {
     ) -> Result<tonic::Response<SetResponse>, tonic::Status> {
         let req = request.into_inner();
 
-        let options = req.options.map(|opts| SetOptions {
-            preserve_history: opts.preserve_history,
-            ttl: std::time::Duration::from_secs(opts.ttl as u64),
-        });
+        let options = match req.options {
+            Some(opts) if opts.ttl < 0 => {
+                return Err(tonic::Status::invalid_argument("ttl must not be negative"))
+            }
+            Some(opts) => Some(SetOptions {
+                preserve_history: opts.preserve_history,
+                ttl: std::time::Duration::from_secs(opts.ttl as u64),
+            }),
+            None => None,
+        };
 
         self.datastore.set(req.key, req.value, options);
 
@@ -83,23 +89,14 @@ impl DatastoreTrait for MyDatastore {
         let inner = request.into_inner();
         let key = inner.key;
 
-        let options = inner.options.map(|opts| GetOptions {
-            history_count: opts.history_count.map_or(0, |count| {
-                if count >= 0 {
-                    count as usize
-                } else {
-                    0
-                }
-            }),
-        });
+        let options = inner
+            .options
+            .and_then(|opts| opts.history_count)
+            .map(|count| GetOptions {
+                history_count: count.max(0) as usize,
+            });
 
         let items = self.datastore.query(&key, options);
-
-        if items.is_empty() {
-            return Err(tonic::Status::not_found(
-                "No items found for the given keys",
-            ));
-        }
 
         // Construct the response from the items
         let reply = QueryResponse {
@@ -117,16 +114,21 @@ impl DatastoreTrait for MyDatastore {
 
     async fn delete(
         &self,
-        _request: tonic::Request<DeleteRequest>,
+        request: tonic::Request<DeleteRequest>,
     ) -> Result<tonic::Response<DeleteResponse>, tonic::Status> {
-        return Err(tonic::Status::not_found("Not implemented"));
+        let success = self.datastore.delete(&request.into_inner().key);
+        Ok(tonic::Response::new(DeleteResponse { success }))
     }
 
     async fn delete_at_index(
         &self,
-        _request: tonic::Request<DeleteAtIndexRequest>,
+        request: tonic::Request<DeleteAtIndexRequest>,
     ) -> Result<tonic::Response<DeleteAtIndexResponse>, tonic::Status> {
-        return Err(tonic::Status::not_found("Not implemented"));
+        let req = request.into_inner();
+        let index = usize::try_from(req.index)
+            .map_err(|_| tonic::Status::invalid_argument("index must not be negative"))?;
+        let success = self.datastore.delete_at_index(&req.key, index);
+        Ok(tonic::Response::new(DeleteAtIndexResponse { success }))
     }
 }
 
@@ -156,7 +158,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn a task to handle signals
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("failed to listen for event");
-        shutdown_tx.send(()).expect("failed to send shutdown signal");
+        shutdown_tx
+            .send(())
+            .expect("failed to send shutdown signal");
     });
 
     let addr = SocketAddr::new(args.listen_ip, args.port);

@@ -196,9 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(("query", sub_matches)) => {
             let key = sub_matches.get_one::<String>("key").unwrap();
-            let history_count = sub_matches
-                .get_one::<String>("history_count")
-                .and_then(|v| v.parse::<i64>().ok());
+            let history_count = sub_matches.get_one::<i64>("history_count").copied();
             let raw = sub_matches.get_flag("raw");
 
             query(&mut client, key.to_string(), history_count, raw).await?;

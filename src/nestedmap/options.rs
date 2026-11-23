@@ -14,7 +14,7 @@ impl SetOptions {
     pub fn new() -> Self {
         Self {
             preserve_history: false,
-            ttl: std::time::Duration::from_secs(3600),
+            ttl: std::time::Duration::ZERO, // zero means no expiry
         }
     }
 

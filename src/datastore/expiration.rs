@@ -21,7 +21,11 @@ pub struct ExpirationEntry {
 pub type ExpirationHeap = BinaryHeap<Reverse<ExpirationEntry>>;
 
 // Sleeps until the next expiry (or until `wake` signals an earlier one) and removes expired items.
-pub async fn reap(map: Arc<RwLock<NestedMap>>, heap: Arc<Mutex<ExpirationHeap>>, wake: Arc<Notify>) {
+pub async fn reap(
+    map: Arc<RwLock<NestedMap>>,
+    heap: Arc<Mutex<ExpirationHeap>>,
+    wake: Arc<Notify>,
+) {
     loop {
         let now = Instant::now();
         let mut expired = Vec::new();

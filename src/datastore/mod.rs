@@ -55,11 +55,15 @@ impl Datastore {
         // Insert before scheduling expiry, so the reaper never misses the item.
         self.map.write().set(&key, new_item, options);
 
-        if let Some(ttl) = ttl {
-            let expires_at = Instant::now() + ttl;
+        // A ttl too large to represent never expires.
+        if let Some(expires_at) = ttl.and_then(|ttl| Instant::now().checked_add(ttl)) {
             let mut heap = self.ttl.lock();
             let earliest = heap.peek().is_none_or(|e| expires_at < e.0.expires_at);
-            heap.push(Reverse(ExpirationEntry { expires_at, id, key }));
+            heap.push(Reverse(ExpirationEntry {
+                expires_at,
+                id,
+                key,
+            }));
             drop(heap);
             if earliest {
                 self.wake.notify_one();
@@ -73,6 +77,14 @@ impl Datastore {
 
     pub fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
         self.map.read().query(key, options)
+    }
+
+    pub fn delete(&self, key: &str) -> bool {
+        self.map.write().delete(key)
+    }
+
+    pub fn delete_at_index(&self, key: &str, index: usize) -> bool {
+        self.map.write().delete_at_index(key, index)
     }
 }
 #[cfg(test)]
@@ -121,5 +133,13 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
         assert!(ds.get("a.early").is_none());
         assert!(ds.get("a.late").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_huge_ttl_never_expires() {
+        let ds = Datastore::new(1);
+        let opts = SetOptions::new().ttl(Duration::from_secs(i64::MAX as u64));
+        ds.set("a".to_string(), b"abc".to_vec(), Some(opts));
+        assert!(ds.get("a").is_some());
     }
 }

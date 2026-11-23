@@ -1,103 +1,61 @@
+use std::collections::VecDeque;
+use std::str::Split;
+
 use super::config::*;
 use super::*;
 
 impl NestedMap {
+    // Removes the node at `keys` and everything below it.
     pub fn delete(&mut self, keys: &str) -> bool {
-        let keys: Vec<&str> = keys.split(DELIMITER).collect();
-        let mut current_map = &mut self.data;
-
-        for (i, key) in keys.iter().enumerate() {
-            if i == keys.len() - 1 {
-                // Last key, attempt to delete
-                return current_map.remove(*key).is_some();
-            }
-
-            // Not the last key, dive deeper
-            match current_map.get_mut(*key) {
-                Some(NestedValue::Map(map)) => {
-                    current_map = &mut map.data;
-                }
-                _ => return false, // Next key is not a map, or key not found
-            }
-        }
-
-        false
+        let (parent, last) = match keys.rsplit_once(DELIMITER) {
+            Some((parent, last)) => (self.node_mut(parent), last),
+            None => (Some(self), keys),
+        };
+        parent.is_some_and(|p| p.children.remove(last).is_some())
     }
 
     pub fn delete_at_index(&mut self, keys: &str, index: usize) -> bool {
-        let keys: Vec<&str> = keys.split(DELIMITER).collect();
-        let mut current_map = &mut self.data;
-
-        for (i, key) in keys.iter().enumerate() {
-            if i == keys.len() - 1 {
-                // At the last key, access the nested items via VALUE_KEY
-                if let Some(NestedValue::Map(final_map)) = current_map.get_mut(*key) {
-                    if let Some(NestedValue::Items(items)) = final_map.data.get_mut(VALUE_KEY) {
-                        if index < items.len() {
-                            items.remove(index);
-
-                            // Optionally remove the VALUE_KEY if no items left
-                            if items.is_empty() {
-                                final_map.data.remove(VALUE_KEY);
-                            }
-
-                            return true;
-                        }
-                        return false; // Index out of bounds
-                    }
-                    return false; // VALUE_KEY not found or not containing items
-                }
-                return false; // Last key does not lead to a Map
-            }
-
-            // Navigate deeper into the map
-            if let Some(NestedValue::Map(map)) = current_map.get_mut(*key) {
-                current_map = &mut map.data;
-            } else {
-                return false;
-            }
-        }
-
-        false
+        self.remove_item(&mut keys.split(DELIMITER), &mut |items| {
+            items.remove(index).is_some()
+        })
     }
 
     pub fn delete_by_id(&mut self, keys: &str, id: i64) -> bool {
-        let keys: Vec<&str> = keys.split(DELIMITER).collect();
-        let mut current_map = &mut self.data;
+        self.remove_item(&mut keys.split(DELIMITER), &mut |items| match items
+            .iter()
+            .position(|item| item.id == id)
+        {
+            Some(idx) => items.remove(idx).is_some(),
+            None => false,
+        })
+    }
 
-        for (i, key) in keys.iter().enumerate() {
-            if i == keys.len() - 1 {
-                // At the last key, access the nested items via VALUE_KEY
-                if let Some(NestedValue::Map(final_map)) = current_map.get_mut(*key) {
-                    if let Some(NestedValue::Items(items)) = final_map.data.get_mut(VALUE_KEY) {
-                        for (idx, item) in items.iter().enumerate() {
-                            if item.id == id {
-                                items.remove(idx);
+    fn node_mut(&mut self, keys: &str) -> Option<&mut NestedMap> {
+        keys.split(DELIMITER)
+            .try_fold(self, |node, key| node.children.get_mut(key))
+    }
 
-                                // Optionally remove the VALUE_KEY if no items left
-                                if items.is_empty() {
-                                    final_map.data.remove(VALUE_KEY);
-                                }
-
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Navigate deeper into the map
-            if let Some(NestedValue::Map(map)) = current_map.get_mut(*key) {
-                current_map = &mut map.data;
-            } else {
-                return false;
-            }
+    // Applies `remove` to the items at the end of `keys`, then prunes nodes left empty.
+    fn remove_item(
+        &mut self,
+        keys: &mut Split<'_, &str>,
+        remove: &mut dyn FnMut(&mut VecDeque<Item>) -> bool,
+    ) -> bool {
+        let Some(key) = keys.next() else {
+            return remove(&mut self.items);
+        };
+        let Some(child) = self.children.get_mut(key) else {
+            return false;
+        };
+        let removed = child.remove_item(keys, remove);
+        if removed && child.is_empty() {
+            self.children.remove(key);
         }
-
-        false
+        removed
     }
 }
 
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use self::options::{GetOptions, SetOptions};
@@ -246,6 +204,17 @@ mod tests {
 
         let items: Vec<Item> = nm.query("a.b.c", Some(GetOptions::new().history_count(3)));
         assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_by_id_prunes_empty_nodes() {
+        let mut nm = NestedMap::new(1);
+        nm.set("a.b.c", create_item("a.b.c", b"abc"), None);
+        nm.set("a.x", create_item("a.x", b"ax"), None);
+
+        assert!(nm.delete_by_id("a.b.c", 1));
+        assert!(!nm.children["a"].children.contains_key("b"));
+        assert!(nm.get("a.x").is_some());
     }
 
     fn delete_tests(test_cases: Vec<TestCase>) {

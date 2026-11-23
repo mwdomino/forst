@@ -1,27 +1,12 @@
-use super::config::*;
 use super::*;
 
 impl NestedMap {
     pub fn get(&self, keys: &str) -> Option<&Item> {
-        let mut current_map = &self.data;
-
-        for key in keys.split(DELIMITER) {
-            if let Some(NestedValue::Map(map)) = current_map.get(key) {
-                current_map = &map.data;
-            } else {
-                return None; // Early exit if no map is found
-            }
-        }
-
-        // Try to retrieve items at the VALUE_KEY in the final map
-        if let Some(NestedValue::Items(items)) = current_map.get(VALUE_KEY) {
-            items.front() // Return the first item if available
-        } else {
-            None
-        }
+        self.node(keys)?.items.front()
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::*;
@@ -65,6 +50,17 @@ mod tests {
         ];
 
         get_tests(test_cases)
+    }
+
+    // "__value" was once a reserved internal key; it must behave like any other segment.
+    #[test]
+    fn test_get_reserved_looking_segment() {
+        let mut nm = NestedMap::new(1);
+        nm.set("a.__value", create_item("a.__value", b"child"), None);
+        nm.set("a", create_item("a", b"parent"), None);
+
+        assert_eq!(nm.get("a").unwrap().value, b"parent");
+        assert_eq!(nm.get("a.__value").unwrap().value, b"child");
     }
 
     fn get_tests(test_cases: Vec<TestCase>) {

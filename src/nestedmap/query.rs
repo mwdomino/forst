@@ -1,84 +1,52 @@
 use super::config::*;
 use super::options::GetOptions;
-use super::{Item, NestedMap, NestedValue};
+use super::{Item, NestedMap};
 
 impl NestedMap {
     pub fn query(&self, keys: &str, options: Option<GetOptions>) -> Vec<Item> {
         let options = options.unwrap_or_default();
         let mut results = Vec::new();
         let keys: Vec<&str> = keys.split(DELIMITER).collect();
-        Self::query_recursive(&keys, self, &mut results, options.history_count);
+        self.query_recursive(&keys, &mut results, options.history_count);
         results
     }
 
-    fn query_recursive(
-        keys: &[&str],
-        current: &NestedMap,
-        results: &mut Vec<Item>,
-        history_max: usize,
-    ) {
-        if keys.is_empty() {
-            // Collect items at the current level using VALUE_KEY
-            if let Some(NestedValue::Items(items)) = current.data.get(VALUE_KEY) {
-                results.extend(items.iter().take(history_max).cloned());
-            }
+    fn query_recursive(&self, keys: &[&str], results: &mut Vec<Item>, history_max: usize) {
+        let Some((&next_key, remaining_keys)) = keys.split_first() else {
+            results.extend(self.items.iter().take(history_max).cloned());
             return;
-        }
-
-        let next_key = keys[0];
-        let remaining_keys = &keys[1..];
+        };
 
         match next_key {
+            // Recurse into every child when "*" is encountered
             WILDCARD => {
-                // Iterate through all entries in the current map
-                for value in current.data.values() {
-                    if let NestedValue::Map(nested_map) = value {
-                        // Recurse into every nested map when "*" is encountered
-                        Self::query_recursive(remaining_keys, nested_map, results, history_max);
-                    }
+                for child in self.children.values() {
+                    child.query_recursive(remaining_keys, results, history_max);
                 }
             }
+            // Collect everything below this level, but not this level itself
             COLLECTOR => {
-                Self::collect_all(current, results, true, history_max);
+                for child in self.children.values() {
+                    child.collect_all(results, history_max);
+                }
             }
             _ => {
-                if let Some(NestedValue::Map(nested_map)) = current.data.get(next_key) {
-                    if remaining_keys.is_empty() {
-                        // Check for VALUE_KEY in the last map
-                        if let Some(NestedValue::Items(items)) = nested_map.data.get(VALUE_KEY) {
-                            results.extend(items.iter().take(history_max).cloned());
-                        }
-                    } else {
-                        Self::query_recursive(remaining_keys, nested_map, results, history_max);
-                    }
+                if let Some(child) = self.children.get(next_key) {
+                    child.query_recursive(remaining_keys, results, history_max);
                 }
             }
         }
     }
 
-    fn collect_all(
-        current: &NestedMap,
-        results: &mut Vec<Item>,
-        skip_current_level: bool,
-        history_max: usize,
-    ) {
-        // Only collect items if not skipping the current level
-        if !skip_current_level {
-            if let Some(NestedValue::Items(items)) = current.data.get(VALUE_KEY) {
-                results.extend(items.iter().take(history_max).cloned());
-            }
-        }
-
-        // Always proceed to collect from sub-maps
-        for value in current.data.values() {
-            if let NestedValue::Map(nested_map) = value {
-                // Skip the current level's items but not for sub-maps
-                Self::collect_all(nested_map, results, false, history_max);
-            }
+    fn collect_all(&self, results: &mut Vec<Item>, history_max: usize) {
+        results.extend(self.items.iter().take(history_max).cloned());
+        for child in self.children.values() {
+            child.collect_all(results, history_max);
         }
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::*;

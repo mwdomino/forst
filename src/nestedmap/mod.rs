@@ -9,9 +9,12 @@ pub mod query;
 pub mod set;
 pub mod test_helpers;
 
+// One node per key segment: "a.b.c" stores its items at children[a].children[b].children[c].
 #[derive(Debug)]
 pub struct NestedMap {
-    data: BTreeMap<String, NestedValue>,
+    children: BTreeMap<String, NestedMap>,
+    // Newest first, at most max_history long
+    items: VecDeque<Item>,
     max_history: usize,
 }
 
@@ -23,31 +26,21 @@ pub struct Item {
     pub id: i64,
 }
 
-#[derive(Debug)]
-pub enum NestedValue {
-    Map(NestedMap),
-    Items(VecDeque<Item>),
-}
-
-// Helper function to get mutable reference to nested map if the variant is Map
-impl NestedValue {
-    pub fn as_map_mut(&mut self) -> &mut BTreeMap<String, NestedValue> {
-        match self {
-            NestedValue::Map(map) => &mut map.data,
-            _ => panic!("Expected NestedValue to be Map"),
-        }
-    }
-}
-
 impl NestedMap {
     pub fn new(max_history: usize) -> Self {
         NestedMap {
-            data: BTreeMap::new(),
+            children: BTreeMap::new(),
+            items: VecDeque::new(),
             max_history,
         }
     }
 
-    pub fn eviction_callback(&mut self, keys: &str, id: i64) {
-        let _ = self.delete_by_id(keys, id);
+    fn node(&self, keys: &str) -> Option<&NestedMap> {
+        keys.split(config::DELIMITER)
+            .try_fold(self, |node, key| node.children.get(key))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.children.is_empty() && self.items.is_empty()
     }
 }

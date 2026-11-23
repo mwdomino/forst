@@ -1,56 +1,47 @@
 use super::config::*;
 use super::options::SetOptions;
-use super::{Item, NestedMap, NestedValue};
-use std::collections::VecDeque;
+use super::{Item, NestedMap};
 
 impl NestedMap {
     pub fn set(&mut self, keys: &str, value: Item, options: Option<SetOptions>) {
         let options = options.unwrap_or_default();
         let max_history = self.max_history;
-        let mut current_map = &mut self.data;
+        let mut node = self;
 
         // Traverse to the appropriate node, allocating a key only for new nodes
         for key in keys.split(DELIMITER) {
-            if !current_map.contains_key(key) {
-                current_map.insert(key.to_owned(), NestedValue::Map(NestedMap::new(max_history)));
+            if !node.children.contains_key(key) {
+                node.children
+                    .insert(key.to_owned(), NestedMap::new(max_history));
             }
-            current_map = current_map.get_mut(key).unwrap().as_map_mut();
+            node = node.children.get_mut(key).unwrap();
         }
 
-        // Access or create the items list at the final key under VALUE_KEY
-        if !current_map.contains_key(VALUE_KEY) {
-            current_map.insert(VALUE_KEY.to_owned(), NestedValue::Items(VecDeque::new()));
+        let items = &mut node.items;
+        if !options.preserve_history {
+            match items.front_mut() {
+                Some(front) => *front = value,
+                None => items.push_front(value),
+            }
+            return;
         }
 
-        if let Some(NestedValue::Items(items)) = current_map.get_mut(VALUE_KEY) {
-            if !options.preserve_history {
-                match items.front_mut() {
-                    Some(front) => *front = value,
-                    None => items.push_front(value),
-                }
-                return;
-            }
-
-            // Prepend new item to the list to keep the newest items at the start
-            if items.len() >= max_history {
-                items.pop_back(); // Remove the oldest item if we exceed the max history
-            }
-            items.push_front(value);
+        // Prepend new item to the list to keep the newest items at the start
+        if items.len() >= max_history {
+            items.pop_back(); // Remove the oldest item if we exceed the max history
         }
+        items.push_front(value);
     }
 }
 
-#[cfg(not(test))]
+#[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::sync::Mutex;
-
     use super::*;
     use crate::nestedmap::options::*;
     use crate::nestedmap::test_helpers::*;
 
-    #[tokio::test]
-    async fn test_set() {
+    #[test]
+    fn test_set() {
         //let mut nm = NestedMap::new(1);
 
         let test_cases = vec![
@@ -90,8 +81,8 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_without_history() {
+    #[test]
+    fn test_set_without_history() {
         let test_cases = vec![TestCase {
             name: "Test without history option",
             setup: Box::new(|nm| {
@@ -111,8 +102,8 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_history() {
+    #[test]
+    fn test_set_history() {
         let test_cases = vec![
             TestCase {
                 name: "Test more than max_history values",
@@ -180,10 +171,10 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_mixed_history() {
+    #[test]
+    fn test_set_mixed_history() {
         let test_cases = vec![TestCase {
-            name: "Test more than max_history values",
+            name: "Overwrite without history replaces only the newest item",
             setup: Box::new(|nm| {
                 nm.set(
                     "a.b.c.d",
@@ -198,7 +189,7 @@ mod tests {
                 nm.set(
                     "a.b.c.d",
                     create_item("a.b.c.d", b"value3"),
-                    Some(SetOptions::new().preserve_history(true)),
+                    Some(SetOptions::new().preserve_history(false)),
                 );
                 nm.set(
                     "a.b.c.d",
@@ -215,7 +206,7 @@ mod tests {
             expected: vec![
                 create_item("a.b.c.d", b"value5"),
                 create_item("a.b.c.d", b"value4"),
-                create_item("a.b.c.d", b"value2"),
+                create_item("a.b.c.d", b"value3"),
                 create_item("a.b.c.d", b"value1"),
             ],
             max_history: 5,
@@ -224,56 +215,19 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_expiration() {
-        let nm = Arc::new(Mutex::new(NestedMap::new(1)));
-
-        let mut nm_locked = nm.lock().unwrap();
-        nm_locked.set(
-            "a.b.c",
-            create_item("a.b.c", b"abc"),
-            Some(SetOptions::new().ttl(Duration::from_millis(100))),
-        );
-
-        // get value
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_none() {
-                panic!("Did not find key");
-            }
-        };
-
-        // sleep for 200ms
-        let duration = Duration::from_millis(120);
-        sleep(duration).await;
-
-        // get value, should not be present
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_some() {
-                panic!("Found key that should have been removed!")
-            }
-        };
-    }
-
     fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
-            let nm = Arc::new(Mutex::new(NestedMap::new(test.max_history)));
+            let mut nm = NestedMap::new(test.max_history);
+            (test.setup)(&mut nm);
 
-            let mut nm_locked = nm.lock().unwrap();
-            (test.setup)(&mut nm_locked);
+            let results = nm.query(
+                &test.search_keys,
+                Some(GetOptions::new().history_count(test.max_history)),
+            );
 
-            let results = {
-                let nm_locked = nm.lock().unwrap();
-                nm_locked.query(
-                    &test.search_keys,
-                    Some(GetOptions::new().history_count(test.max_history)),
-                )
-            };
-
-            assert_eq!(results.len(), test.expected.len());
+            assert_eq!(results.len(), test.expected.len(), "{}", test.name);
             for (i, v) in results.iter().enumerate() {
-                assert!(items_equal(v, &test.expected[i]));
+                assert!(items_equal(v, &test.expected[i]), "{}", test.name);
             }
         }
     }
