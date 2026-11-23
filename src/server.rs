@@ -1,5 +1,7 @@
 use std::net::{IpAddr, SocketAddr};
 
+use mimalloc::MiMalloc;
+
 use clap::{Parser, value_parser};
 
 use tokio::signal;
@@ -13,6 +15,9 @@ use datastore::{
 };
 use rs_datastore::datastore::Datastore;
 use rs_datastore::nestedmap::options::{GetOptions, SetOptions};
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 pub mod datastore {
     tonic::include_proto!("datastore");
@@ -162,8 +167,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\t Port: {}", args.port);
     println!("\t Max history: {}", args.max_history);
 
-
     let server = Server::builder()
+        .tcp_nodelay(true)
         .add_service(DatastoreServer::new(my_datastore))
         .serve_with_shutdown(addr, async {
             shutdown_rx.await.ok();

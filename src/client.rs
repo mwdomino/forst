@@ -2,7 +2,7 @@ use tonic::transport::Channel;
 use tonic::Request;
 
 use clap::{Arg, ArgAction, Command};
-use rmp_serde::decode::from_read_ref;
+use rmp_serde::from_slice;
 use serde_json::{json, to_string, to_string_pretty, Value};
 
 use datastore::datastore_client::DatastoreClient;
@@ -31,7 +31,7 @@ async fn get(
             println!("{}", general_purpose::STANDARD.encode(&item.value));
         } else {
             // deserialize messagepack into serde_json::Value
-            match from_read_ref::<_, Value>(&item.value) {
+            match from_slice::<Value>(&item.value) {
                 Ok(value) => {
                     if let Ok(json_str) = to_string_pretty(&value) {
                         println!("{}", json_str);
@@ -101,7 +101,7 @@ async fn query(
             }));
         } else {
             // deserialize messagepack into serde_json::Value
-            let value = match from_read_ref::<_, Value>(&item.value) {
+            let value = match from_slice::<Value>(&item.value) {
                 Ok(value) => value,
                 Err(_) => json!({"error": "Failed to deserialize MessagePack data"}),
             };

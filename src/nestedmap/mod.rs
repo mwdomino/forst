@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::time::SystemTime;
 
-use serde::{Deserialize, Serialize};
-
 pub mod config;
 pub mod delete;
 pub mod get;
@@ -17,7 +15,7 @@ pub struct NestedMap {
     max_history: usize,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Item {
     pub key: String,
     pub value: Vec<u8>,
