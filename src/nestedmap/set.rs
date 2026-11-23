@@ -7,7 +7,7 @@ pub enum SetOutcome {
     // `schedule` is set when the caller must add an expiry entry for this key at that time.
     // `evicted` is the item this write replaced or pushed out of history.
     Applied {
-        schedule: Option<i64>,
+        schedule: Option<(i64, String)>,
         evicted: Option<Item>,
     },
     // An item with the same timestamp is already stored.
@@ -17,13 +17,14 @@ pub enum SetOutcome {
 }
 
 impl NestedMap {
-    pub fn set(&mut self, keys: &str, value: Item, options: Option<SetOptions>) -> SetOutcome {
+    // Stores `value` at `value.key`.
+    pub fn set(&mut self, value: Item, options: Option<SetOptions>) -> SetOutcome {
         let options = options.unwrap_or_default();
         let max_history = self.max_history.max(1);
         let mut node = self;
 
         // Traverse to the appropriate node, allocating a key only for new nodes
-        for key in keys.split(DELIMITER) {
+        for key in value.key.split(DELIMITER) {
             if !node.children.contains_key(key) {
                 node.children
                     .insert(key.to_owned(), NestedMap::new(node.max_history));
@@ -32,7 +33,11 @@ impl NestedMap {
         }
 
         let timestamp = value.timestamp;
-        let expires_at = value.expires_at;
+        // Keep one pending expiry entry per node: add one only if this item expires first
+        let schedule = value
+            .expires_at
+            .filter(|&at| node.scheduled_expiry.is_none_or(|s| at < s))
+            .map(|at| (at, value.key.clone()));
         let items = &mut node.items;
         let mut evicted = None;
 
@@ -63,10 +68,8 @@ impl NestedMap {
             }
         }
 
-        // Keep one pending expiry entry per node: add one only if this item expires first
-        let schedule = expires_at.filter(|&at| node.scheduled_expiry.is_none_or(|s| at < s));
-        if schedule.is_some() {
-            node.scheduled_expiry = schedule;
+        if let Some((at, _)) = schedule {
+            node.scheduled_expiry = Some(at);
         }
         SetOutcome::Applied { schedule, evicted }
     }
@@ -86,7 +89,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", create_item("a", b"the value a"), None);
+                    nm.set(create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -95,7 +98,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -104,11 +107,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        "a.b.c.d.e.f",
-                        create_item("a.b.c.d.e.f", b"the value abcdef"),
-                        None,
-                    );
+                    nm.set(create_item("a.b.c.d.e.f", b"the value abcdef"), None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],
@@ -126,7 +125,6 @@ mod tests {
             setup: Box::new(|nm| {
                 for i in 1..=7 {
                     nm.set(
-                        "a.b.c.d",
                         create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                         Some(SetOptions::new().preserve_history(false)),
                     );
@@ -148,7 +146,6 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=7 {
                         nm.set(
-                            "a.b.c.d",
                             create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -169,7 +166,6 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=3 {
                         nm.set(
-                            "a.b.c.d",
                             create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -188,7 +184,6 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=5 {
                         nm.set(
-                            "a.b.c.d",
                             create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
@@ -215,27 +210,22 @@ mod tests {
             name: "Overwrite without history replaces only the newest item",
             setup: Box::new(|nm| {
                 nm.set(
-                    "a.b.c.d",
                     create_item("a.b.c.d", b"value1"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
                     create_item("a.b.c.d", b"value2"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
                     create_item("a.b.c.d", b"value3"),
                     Some(SetOptions::new().preserve_history(false)),
                 );
                 nm.set(
-                    "a.b.c.d",
                     create_item("a.b.c.d", b"value4"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
                     create_item("a.b.c.d", b"value5"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
@@ -283,7 +273,7 @@ mod tests {
         let mut nm = NestedMap::new(3);
 
         for ts in [20, 10, 30, 20, 30] {
-            nm.set("h", item_at("h", b"v", ts), history.clone());
+            nm.set(item_at("h", b"v", ts), history.clone());
         }
         let ts: Vec<i64> = nm
             .query("h", Some(GetOptions::new().history_count(3)))
@@ -294,10 +284,10 @@ mod tests {
 
         // Full history: older than everything kept is stale, newer pushes out the oldest
         assert_eq!(
-            nm.set("h", item_at("h", b"v", 5), history.clone()),
+            nm.set(item_at("h", b"v", 5), history.clone()),
             SetOutcome::Stale
         );
-        nm.set("h", item_at("h", b"v", 40), history.clone());
+        nm.set(item_at("h", b"v", 40), history.clone());
         assert_eq!(
             nm.query("h", Some(GetOptions::new().history_count(3)))
                 .len(),
@@ -317,13 +307,10 @@ mod tests {
             evicted: None,
         };
 
-        assert_eq!(nm.set("k", item_at("k", b"new", 20), None), applied);
+        assert_eq!(nm.set(item_at("k", b"new", 20), None), applied);
+        assert_eq!(nm.set(item_at("k", b"old", 10), None), SetOutcome::Stale);
         assert_eq!(
-            nm.set("k", item_at("k", b"old", 10), None),
-            SetOutcome::Stale
-        );
-        assert_eq!(
-            nm.set("k", item_at("k", b"dup", 20), None),
+            nm.set(item_at("k", b"dup", 20), None),
             SetOutcome::Duplicate
         );
         assert_eq!(nm.get("k").unwrap().value, b"new");
@@ -338,15 +325,15 @@ mod tests {
         };
 
         assert!(matches!(
-            nm.set("k", expiring(1, 100), None),
+            nm.set(expiring(1, 100), None),
             SetOutcome::Applied {
-                schedule: Some(100),
+                schedule: Some((100, _)),
                 ..
             }
         ));
         // A later expiry needs no new entry: the pending one reschedules when it fires
         assert!(matches!(
-            nm.set("k", expiring(2, 200), None),
+            nm.set(expiring(2, 200), None),
             SetOutcome::Applied {
                 schedule: None,
                 evicted: Some(_)

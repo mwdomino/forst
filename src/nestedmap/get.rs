@@ -19,7 +19,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", create_item("a", b"the value a"), None);
+                    nm.set(create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -28,7 +28,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -37,11 +37,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        "a.b.c.d.e.f",
-                        create_item("a.b.c.d.e.f", b"the value abcdef"),
-                        None,
-                    );
+                    nm.set(create_item("a.b.c.d.e.f", b"the value abcdef"), None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],
@@ -56,8 +52,8 @@ mod tests {
     #[test]
     fn test_get_reserved_looking_segment() {
         let mut nm = NestedMap::new(1);
-        nm.set("a.__value", create_item("a.__value", b"child"), None);
-        nm.set("a", create_item("a", b"parent"), None);
+        nm.set(create_item("a.__value", b"child"), None);
+        nm.set(create_item("a", b"parent"), None);
 
         assert_eq!(nm.get("a").unwrap().value, b"parent");
         assert_eq!(nm.get("a.__value").unwrap().value, b"child");

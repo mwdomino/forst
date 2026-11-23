@@ -6,7 +6,7 @@ use std::hint::black_box;
 
 fn bench_get(c: &mut Criterion) {
     let mut nm = NestedMap::new(1);
-    nm.set("a.b.c.d.e", create_item("a.b.c.d.e", b"some value a"), None);
+    nm.set(create_item("a.b.c.d.e", b"some value a"), None);
 
     c.bench_function("get_key a.b.c.d.e", |b| {
         b.iter(|| black_box(nm.get(black_box("a.b.c.d.e"))).is_some());
@@ -19,7 +19,6 @@ fn bench_set(c: &mut Criterion) {
     c.bench_function("set_key a.b.c.d.e", |b| {
         b.iter(|| {
             nm.set(
-                black_box("a.b.c.d.e"),
                 create_item("a.b.c.d.e", b"some value a"),
                 Some(SetOptions::new().preserve_history(true)),
             );

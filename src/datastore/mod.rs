@@ -168,19 +168,18 @@ impl Datastore {
         let mut evicted = Vec::new();
 
         for (item, preserve_history) in valid {
-            let key = item.key.clone();
             let event = copies.next();
             let options = SetOptions::new().preserve_history(preserve_history);
             let SetOutcome::Applied {
                 schedule,
                 evicted: old,
-            } = state.map.set(&key, item, Some(options))
+            } = state.map.set(item, Some(options))
             else {
                 continue;
             };
             applied = true;
             evicted.extend(old);
-            if let Some(at) = schedule {
+            if let Some((at, key)) = schedule {
                 wake |= state.ttl.push(at, key);
             }
             if let Some(item) = event {

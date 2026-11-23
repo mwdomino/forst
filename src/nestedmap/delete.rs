@@ -102,7 +102,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", create_item("a", b"the value a"), None);
+                    nm.set(create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: Vec::new(),
@@ -111,7 +111,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: Vec::new(),
@@ -120,11 +120,7 @@ mod tests {
             TestCase {
                 name: "Test depth 5",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        "a.b.c.d.e",
-                        create_item("a.b.c.d.e", b"the value abcde"),
-                        None,
-                    );
+                    nm.set(create_item("a.b.c.d.e", b"the value abcde"), None);
                 }),
                 search_keys: "a.b.c.d.e".to_string(),
                 expected: Vec::new(),
@@ -141,15 +137,11 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a", create_item("a", b"the value a"), None);
-                    nm.set("a.b", create_item("a.b", b"the value ab"), None);
-                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
-                    nm.set("a.b.c.d", create_item("a.b.c.d", b"the value abcd"), None);
-                    nm.set(
-                        "a.b.c.d.e",
-                        create_item("a.b.c.d.e", b"the value abcde"),
-                        None,
-                    );
+                    nm.set(create_item("a", b"the value a"), None);
+                    nm.set(create_item("a.b", b"the value ab"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c.d", b"the value abcd"), None);
+                    nm.set(create_item("a.b.c.d.e", b"the value abcde"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![
@@ -161,25 +153,13 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set("a", create_item("a", b"the value a"), None);
-                    nm.set("a.b", create_item("a.b", b"the value ab"), None);
-                    nm.set("a.b.c", create_item("a.b.c", b"the value abc"), None);
-                    nm.set("a.b.c.d", create_item("a.b.c.d", b"the value abcd"), None);
-                    nm.set(
-                        "a.b.c.d.e",
-                        create_item("a.b.c.d.e", b"the value abcde"),
-                        None,
-                    );
-                    nm.set(
-                        "a.b.c.d.e.f",
-                        create_item("a.b.c.d.e.f", b"the value abcdef"),
-                        None,
-                    );
-                    nm.set(
-                        "a.b.c.d.e.f.g",
-                        create_item("a.b.c.d.e.f.g", b"the value abcdefg"),
-                        None,
-                    );
+                    nm.set(create_item("a", b"the value a"), None);
+                    nm.set(create_item("a.b", b"the value ab"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c.d", b"the value abcd"), None);
+                    nm.set(create_item("a.b.c.d.e", b"the value abcde"), None);
+                    nm.set(create_item("a.b.c.d.e.f", b"the value abcdef"), None);
+                    nm.set(create_item("a.b.c.d.e.f.g", b"the value abcdefg"), None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f.g", b"the value abcdefg")],
@@ -195,17 +175,14 @@ mod tests {
         let mut nm = NestedMap::new(3);
 
         nm.set(
-            "a.b.c",
             create_item("a.b.c", b"value1"),
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
-            "a.b.c",
             create_item("a.b.c", b"value2"),
             Some(SetOptions::new().preserve_history(true)),
         );
         nm.set(
-            "a.b.c",
             create_item("a.b.c", b"value3"),
             Some(SetOptions::new().preserve_history(true)),
         );
@@ -225,7 +202,6 @@ mod tests {
         let mut nm = NestedMap::new(3);
 
         nm.set(
-            "a.b.c",
             create_item("a.b.c", b"value1"),
             Some(SetOptions::new().preserve_history(true)),
         );
@@ -242,8 +218,8 @@ mod tests {
         let mut nm = NestedMap::new(1);
         let mut item = create_item("a.b.c", b"abc");
         item.expires_at = Some(10);
-        nm.set("a.b.c", item, None);
-        nm.set("a.x", create_item("a.x", b"ax"), None);
+        nm.set(item, None);
+        nm.set(create_item("a.x", b"ax"), None);
 
         // An outdated entry neither removes unexpired items nor reschedules
         assert_eq!(nm.expire("a.b.c", 9, 5), (vec![], None));
@@ -256,9 +232,9 @@ mod tests {
     #[test]
     fn test_delete_returns_subtree_items() {
         let mut nm = NestedMap::new(1);
-        nm.set("a.b", create_item("a.b", b"ab"), None);
-        nm.set("a.b.c", create_item("a.b.c", b"abc"), None);
-        nm.set("a.x", create_item("a.x", b"ax"), None);
+        nm.set(create_item("a.b", b"ab"), None);
+        nm.set(create_item("a.b.c", b"abc"), None);
+        nm.set(create_item("a.x", b"ax"), None);
 
         assert_eq!(nm.delete("a.b").len(), 2);
         assert!(nm.get("a.x").is_some());
