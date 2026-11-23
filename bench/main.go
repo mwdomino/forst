@@ -118,13 +118,18 @@ func runBatches(clients []pb.DatastoreClient, value []byte) {
 		for j := range req.Items {
 			req.Items[j] = setRequest(key(rng.IntN(*keyspace)), value, ts+int64(j))
 		}
-		for {
+		for attempt := 1; ; attempt++ {
 			resp, err := c.SetBatch(ctx, req)
 			if err == nil {
 				rejected.Add(int64(len(resp.Rejected)))
 				return nil
 			}
 			retries.Add(1)
+			// A real collector retries forever; a benchmark gives up on a dead server
+			if attempt == 100 {
+				log.Fatalf("batch not acked after %d attempts: %v", attempt, err)
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	})
 	elapsed := time.Since(start)
