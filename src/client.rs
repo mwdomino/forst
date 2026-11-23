@@ -7,12 +7,9 @@ use serde_json::{json, to_string, to_string_pretty, Value};
 
 use datastore::datastore_client::DatastoreClient;
 use datastore::{GetRequest, QueryRequest, SetRequest};
+use rs_datastore::service::proto as datastore;
 
 use base64::{engine::general_purpose, Engine as _};
-
-pub mod datastore {
-    tonic::include_proto!("datastore");
-}
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: &str = "7777";
@@ -68,6 +65,7 @@ async fn set(
             preserve_history: true,
             ttl,
         }),
+        timestamp_ns: 0,
     };
     let response = client.set(Request::new(request)).await?;
     println!(

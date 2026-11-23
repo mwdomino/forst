@@ -46,6 +46,21 @@ impl NestedMap {
     }
 }
 
+// Whether query(pattern) would return items stored at `key`. Used to route subscription events.
+pub fn matches(pattern: &str, key: &str) -> bool {
+    let mut keys = key.split(DELIMITER);
+    for p in pattern.split(DELIMITER) {
+        let key = keys.next();
+        match p {
+            COLLECTOR => return key.is_some(),
+            WILDCARD if key.is_some() => {}
+            _ if key == Some(p) => {}
+            _ => return false,
+        }
+    }
+    keys.next().is_none()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +429,41 @@ mod tests {
                 "Test {}: Items do not match.",
                 test.name
             );
+        }
+    }
+
+    #[test]
+    fn test_matches_agrees_with_query() {
+        let keys = ["a", "a.b", "a.b.c", "a.b.x", "a.c.c", "a.b.c.d", "b.b.c"];
+        let mut nm = NestedMap::new(1);
+        for key in keys {
+            nm.set(key, create_item(key, b"v"), None);
+        }
+
+        let patterns = [
+            "a",
+            "a.b",
+            "a.*",
+            "a.*.c",
+            "*.b.c",
+            "a.>",
+            "a.b.>",
+            ">",
+            "*",
+            "a.b.c.d.e",
+            "x.>",
+        ];
+        for pattern in patterns {
+            let mut from_query: Vec<String> =
+                nm.query(pattern, None).into_iter().map(|i| i.key).collect();
+            let mut from_matches: Vec<String> = keys
+                .iter()
+                .filter(|k| matches(pattern, k))
+                .map(|k| k.to_string())
+                .collect();
+            from_query.sort();
+            from_matches.sort();
+            assert_eq!(from_query, from_matches, "pattern {pattern}");
         }
     }
 }

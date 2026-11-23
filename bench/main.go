@@ -29,6 +29,8 @@ var (
 	keyspace = flag.Int("keys", 400000, "number of distinct keys")
 	prefill  = flag.Bool("prefill", false, "set every key once before the timed run")
 	ttl      = flag.Int64("ttl", 20, "ttl in seconds for Set (0 = none)")
+	batch    = flag.Int("batch", 0, "items per SetBatch; 0 sends unary Set. Get and Query are not batched")
+	history  = flag.Bool("history", false, "set preserve_history on writes")
 )
 
 const branches = 1000
@@ -52,9 +54,14 @@ func main() {
 
 	if *prefill {
 		run(*keyspace, clients, func(c pb.DatastoreClient, i int, _ *rand.Rand) error {
-			_, err := c.Set(ctx, &pb.SetRequest{Key: key(i), Value: value, Options: &pb.SetOptions{Ttl: *ttl}})
+			_, err := c.Set(ctx, setRequest(key(i), value, 0))
 			return err
 		})
+	}
+
+	if *batch > 0 {
+		runBatches(clients, value)
+		return
 	}
 
 	start := time.Now()
@@ -68,16 +75,59 @@ func main() {
 		case p < *getPct+*queryPct:
 			_, err = c.Query(ctx, &pb.QueryRequest{Key: fmt.Sprintf("ds.yo.%d.*", r%branches)})
 		default:
-			_, err = c.Set(ctx, &pb.SetRequest{Key: key(r), Value: value, Options: &pb.SetOptions{Ttl: *ttl}})
+			_, err = c.Set(ctx, setRequest(key(r), value, 0))
 		}
 		return err
 	})
 	elapsed := time.Since(start)
 
+	fmt.Printf("conns=%d c=%d n=%d get=%d%% query=%d%%\n", *conns, *workers, *total, *getPct, *queryPct)
+	report(*total, elapsed, lat, errs)
+}
+
+func setRequest(key string, value []byte, ts int64) *pb.SetRequest {
+	return &pb.SetRequest{
+		Key:         key,
+		Value:       value,
+		TimestampNs: ts,
+		Options:     &pb.SetOptions{Ttl: *ttl, PreserveHistory: *history},
+	}
+}
+
+// runBatches sends *total items as SetBatch calls like a collector: each batch carries
+// source timestamps and is retried unchanged until acked. Latency is per batch.
+func runBatches(clients []pb.DatastoreClient, value []byte) {
+	ctx := context.Background()
+	var retries, rejected atomic.Int64
+	batches := *total / *batch
+	start := time.Now()
+	lat, _ := run(batches, clients, func(c pb.DatastoreClient, _ int, rng *rand.Rand) error {
+		ts := time.Now().UnixNano()
+		req := &pb.SetBatchRequest{Items: make([]*pb.SetRequest, *batch)}
+		for j := range req.Items {
+			req.Items[j] = setRequest(key(rng.IntN(*keyspace)), value, ts+int64(j))
+		}
+		for {
+			resp, err := c.SetBatch(ctx, req)
+			if err == nil {
+				rejected.Add(int64(len(resp.Rejected)))
+				return nil
+			}
+			retries.Add(1)
+		}
+	})
+	elapsed := time.Since(start)
+
+	fmt.Printf("conns=%d c=%d items=%d batch=%d\n", *conns, *workers, batches**batch, *batch)
+	report(batches**batch, elapsed, lat, retries.Load())
+	fmt.Printf("rejected=%d\n", rejected.Load())
+}
+
+// report prints throughput in operations (items, for batches) and latency per request.
+func report(ops int, elapsed time.Duration, lat []time.Duration, errs int64) {
 	slices.Sort(lat)
 	pct := func(q float64) time.Duration { return lat[int(q*float64(len(lat)-1))] }
-	fmt.Printf("conns=%d c=%d n=%d get=%d%% query=%d%%\n", *conns, *workers, *total, *getPct, *queryPct)
-	fmt.Printf("elapsed=%s rps=%.0f errors=%d\n", elapsed.Round(time.Millisecond), float64(*total)/elapsed.Seconds(), errs)
+	fmt.Printf("elapsed=%s rps=%.0f errors=%d\n", elapsed.Round(time.Millisecond), float64(ops)/elapsed.Seconds(), errs)
 	fmt.Printf("p50=%s p99=%s p999=%s max=%s\n", pct(0.5), pct(0.99), pct(0.999), lat[len(lat)-1])
 }
 

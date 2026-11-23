@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::time::SystemTime;
 
 pub mod config;
 pub mod delete;
@@ -13,17 +12,20 @@ pub mod test_helpers;
 #[derive(Debug)]
 pub struct NestedMap {
     children: BTreeMap<String, NestedMap>,
-    // Newest first, at most max_history long
+    // Newest timestamp first, at most max_history long
     items: VecDeque<Item>,
     max_history: usize,
+    // Expiry time of this node's pending entry in the datastore's expiry heap
+    scheduled_expiry: Option<i64>,
 }
 
+// Timestamps are nanoseconds since the Unix epoch. An item is identified by (key, timestamp).
 #[derive(PartialEq, Debug, Clone)]
 pub struct Item {
     pub key: String,
     pub value: Vec<u8>,
-    pub timestamp: SystemTime,
-    pub id: i64,
+    pub timestamp: i64,
+    pub expires_at: Option<i64>,
 }
 
 impl NestedMap {
@@ -32,6 +34,7 @@ impl NestedMap {
             children: BTreeMap::new(),
             items: VecDeque::new(),
             max_history,
+            scheduled_expiry: None,
         }
     }
 

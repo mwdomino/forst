@@ -2,35 +2,64 @@ use super::config::*;
 use super::options::SetOptions;
 use super::{Item, NestedMap};
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum SetOutcome {
+    // `schedule` is set when the caller must add an expiry entry for this key at that time.
+    Applied { schedule: Option<i64> },
+    // An item with the same timestamp is already stored.
+    Duplicate,
+    // Older than what is kept: the current item without history, or all kept history.
+    Stale,
+}
+
 impl NestedMap {
-    pub fn set(&mut self, keys: &str, value: Item, options: Option<SetOptions>) {
+    pub fn set(&mut self, keys: &str, value: Item, options: Option<SetOptions>) -> SetOutcome {
         let options = options.unwrap_or_default();
-        let max_history = self.max_history;
+        let max_history = self.max_history.max(1);
         let mut node = self;
 
         // Traverse to the appropriate node, allocating a key only for new nodes
         for key in keys.split(DELIMITER) {
             if !node.children.contains_key(key) {
                 node.children
-                    .insert(key.to_owned(), NestedMap::new(max_history));
+                    .insert(key.to_owned(), NestedMap::new(node.max_history));
             }
             node = node.children.get_mut(key).unwrap();
         }
 
+        let timestamp = value.timestamp;
+        let expires_at = value.expires_at;
         let items = &mut node.items;
+
         if !options.preserve_history {
             match items.front_mut() {
-                Some(front) => *front = value,
                 None => items.push_front(value),
+                Some(front) if timestamp > front.timestamp => *front = value,
+                Some(front) if timestamp == front.timestamp => return SetOutcome::Duplicate,
+                Some(_) => return SetOutcome::Stale,
             }
-            return;
+        } else {
+            // Insert by timestamp, so retried or reordered writes land in place
+            let pos = items.partition_point(|item| item.timestamp > timestamp);
+            if items
+                .get(pos)
+                .is_some_and(|item| item.timestamp == timestamp)
+            {
+                return SetOutcome::Duplicate;
+            }
+            if pos >= max_history {
+                return SetOutcome::Stale;
+            }
+            items.insert(pos, value);
+            items.truncate(max_history);
         }
 
-        // Prepend new item to the list to keep the newest items at the start
-        if items.len() >= max_history {
-            items.pop_back(); // Remove the oldest item if we exceed the max history
+        // Keep one pending expiry entry per node: add one only if this item expires first
+        let schedule = expires_at.filter(|&at| node.scheduled_expiry.is_none_or(|s| at < s));
+        if schedule.is_some() {
+            node.scheduled_expiry = schedule;
         }
-        items.push_front(value);
+        SetOutcome::Applied { schedule }
     }
 }
 
@@ -230,5 +259,83 @@ mod tests {
                 assert!(items_equal(v, &test.expected[i]), "{}", test.name);
             }
         }
+    }
+
+    fn item_at(key: &str, value: &[u8], timestamp: i64) -> Item {
+        Item {
+            timestamp,
+            ..create_item(key, value)
+        }
+    }
+
+    #[test]
+    fn test_set_is_idempotent_and_ordered_by_timestamp() {
+        let history = Some(SetOptions::new().preserve_history(true));
+        let mut nm = NestedMap::new(3);
+
+        for ts in [20, 10, 30, 20, 30] {
+            nm.set("h", item_at("h", b"v", ts), history.clone());
+        }
+        let ts: Vec<i64> = nm
+            .query("h", Some(GetOptions::new().history_count(3)))
+            .iter()
+            .map(|i| i.timestamp)
+            .collect();
+        assert_eq!(ts, vec![30, 20, 10]);
+
+        // Full history: older than everything kept is stale, newer pushes out the oldest
+        assert_eq!(
+            nm.set("h", item_at("h", b"v", 5), history.clone()),
+            SetOutcome::Stale
+        );
+        nm.set("h", item_at("h", b"v", 40), history.clone());
+        assert_eq!(
+            nm.query("h", Some(GetOptions::new().history_count(3)))
+                .len(),
+            3
+        );
+        assert_eq!(
+            nm.query("h", Some(GetOptions::new().history_count(3)))[2].timestamp,
+            20
+        );
+    }
+
+    #[test]
+    fn test_set_without_history_is_last_write_wins() {
+        let mut nm = NestedMap::new(1);
+        let applied = SetOutcome::Applied { schedule: None };
+
+        assert_eq!(nm.set("k", item_at("k", b"new", 20), None), applied);
+        assert_eq!(
+            nm.set("k", item_at("k", b"old", 10), None),
+            SetOutcome::Stale
+        );
+        assert_eq!(
+            nm.set("k", item_at("k", b"dup", 20), None),
+            SetOutcome::Duplicate
+        );
+        assert_eq!(nm.get("k").unwrap().value, b"new");
+    }
+
+    #[test]
+    fn test_set_schedules_one_expiry_per_node() {
+        let mut nm = NestedMap::new(1);
+        let expiring = |ts, at| Item {
+            expires_at: Some(at),
+            ..item_at("k", b"v", ts)
+        };
+
+        assert_eq!(
+            nm.set("k", expiring(1, 100), None),
+            SetOutcome::Applied {
+                schedule: Some(100)
+            }
+        );
+        // A later expiry needs no new entry: the pending one reschedules when it fires
+        assert_eq!(
+            nm.set("k", expiring(2, 200), None),
+            SetOutcome::Applied { schedule: None }
+        );
+        assert_eq!(nm.expire("k", 100, 100), (vec![], Some(200)));
     }
 }
