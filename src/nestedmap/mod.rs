@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, VecDeque};
-use std::time::SystemTime;
+use foldhash::HashMap;
+use std::collections::VecDeque;
 
-use serde::{Deserialize, Serialize};
+use bytes::Bytes;
 
 pub mod config;
 pub mod delete;
@@ -11,45 +11,43 @@ pub mod query;
 pub mod set;
 pub mod test_helpers;
 
+// One node per key segment: "a.b.c" stores its items at children[a].children[b].children[c].
 #[derive(Debug)]
 pub struct NestedMap {
-    data: BTreeMap<String, NestedValue>,
+    // Unordered: a hash lookup per segment is much faster than a BTreeMap on ingest
+    children: HashMap<String, NestedMap>,
+    // Newest timestamp first, at most max_history long
+    items: VecDeque<Item>,
     max_history: usize,
+    // Expiry time of this node's pending entry in the datastore's expiry heap
+    scheduled_expiry: Option<i64>,
 }
 
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+// Timestamps are nanoseconds since the Unix epoch. An item is identified by (key, timestamp).
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Item {
     pub key: String,
-    pub value: Vec<u8>,
-    pub timestamp: SystemTime,
-    pub id: i64,
-}
-
-#[derive(Debug)]
-pub enum NestedValue {
-    Map(NestedMap),
-    Items(VecDeque<Item>),
-}
-
-// Helper function to get mutable reference to nested map if the variant is Map
-impl NestedValue {
-    pub fn as_map_mut(&mut self) -> &mut BTreeMap<String, NestedValue> {
-        match self {
-            NestedValue::Map(map) => &mut map.data,
-            _ => panic!("Expected NestedValue to be Map"),
-        }
-    }
+    pub value: Bytes,
+    pub timestamp: i64,
+    pub expires_at: Option<i64>,
 }
 
 impl NestedMap {
     pub fn new(max_history: usize) -> Self {
         NestedMap {
-            data: BTreeMap::new(),
+            children: HashMap::default(),
+            items: VecDeque::new(),
             max_history,
+            scheduled_expiry: None,
         }
     }
 
-    pub fn eviction_callback(&mut self, keys: &str, id: i64) {
-        let _ = self.delete_by_id(keys, id);
+    fn node(&self, keys: &str) -> Option<&NestedMap> {
+        keys.split(config::DELIMITER)
+            .try_fold(self, |node, key| node.children.get(key))
+    }
+
+    fn is_empty(&self) -> bool {
+        self.children.is_empty() && self.items.is_empty()
     }
 }

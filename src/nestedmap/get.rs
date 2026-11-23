@@ -1,27 +1,12 @@
-use super::config::*;
 use super::*;
 
 impl NestedMap {
     pub fn get(&self, keys: &str) -> Option<&Item> {
-        let mut current_map = &self.data;
-
-        for key in keys.split(DELIMITER) {
-            if let Some(NestedValue::Map(map)) = current_map.get(key) {
-                current_map = &map.data;
-            } else {
-                return None; // Early exit if no map is found
-            }
-        }
-
-        // Try to retrieve items at the VALUE_KEY in the final map
-        if let Some(NestedValue::Items(items)) = current_map.get(VALUE_KEY) {
-            items.front() // Return the first item if available
-        } else {
-            None
-        }
+        self.node(keys)?.items.front()
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::nestedmap::test_helpers::*;
@@ -34,7 +19,7 @@ mod tests {
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", &create_item("a", b"the value a"), None);
+                    nm.set(create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -43,7 +28,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -52,11 +37,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        "a.b.c.d.e.f",
-                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
-                        None,
-                    );
+                    nm.set(create_item("a.b.c.d.e.f", b"the value abcdef"), None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],
@@ -65,6 +46,17 @@ mod tests {
         ];
 
         get_tests(test_cases)
+    }
+
+    // "__value" was once a reserved internal key; it must behave like any other segment.
+    #[test]
+    fn test_get_reserved_looking_segment() {
+        let mut nm = NestedMap::new(1);
+        nm.set(create_item("a.__value", b"child"), None);
+        nm.set(create_item("a", b"parent"), None);
+
+        assert_eq!(nm.get("a").unwrap().value, &b"parent"[..]);
+        assert_eq!(nm.get("a.__value").unwrap().value, &b"child"[..]);
     }
 
     fn get_tests(test_cases: Vec<TestCase>) {

@@ -2,17 +2,29 @@ syntax = "proto3";
 
 package datastore;
 
+option go_package = "bench/datastore";
+
 service Datastore {
     rpc Get(GetRequest) returns (GetResponse);
     rpc Set(SetRequest) returns (SetResponse);
+    // Applies every valid item and reports only the rejected ones.
+    // Retrying a batch is safe: an item with the same key and timestamp_ns is applied once.
+    // A batch is not atomic: readers and subscribers can see some of its items before others.
+    // Changes to one key are always seen in the order they were applied.
+    rpc SetBatch(SetBatchRequest) returns (SetBatchResponse);
     rpc Query(QueryRequest) returns (QueryResponse);
     rpc Delete(DeleteRequest) returns (DeleteResponse);
     rpc DeleteAtIndex(DeleteAtIndexRequest) returns (DeleteAtIndexResponse);
+    // Streams the current matching items, then a sync marker, then every change.
+    // A subscriber that falls too far behind gets ABORTED and must subscribe again.
+    rpc Subscribe(SubscribeRequest) returns (stream SubscribeResponse);
 }
 
 message Item {
     string key = 1;
     bytes value = 2;
+    // Source timestamp, nanoseconds since the Unix epoch.
+    int64 timestamp_ns = 3;
 }
 
 message GetRequest {
@@ -27,15 +39,33 @@ message SetRequest {
     string key = 1;
     bytes value = 2;
     SetOptions options = 3;
+    // Source timestamp, nanoseconds since the Unix epoch. 0 means the server receive time.
+    // Together with key it identifies the item, so retries do not duplicate it.
+    int64 timestamp_ns = 4;
 }
 
 message SetOptions {
     bool preserve_history = 1;
+    // Seconds after timestamp_ns that the item expires. 0 means never.
     int64 ttl = 2;
 }
 
 message SetResponse {
     bool success = 1;
+}
+
+message SetBatchRequest {
+    repeated SetRequest items = 1;
+}
+
+message SetBatchResponse {
+    // Items that were not applied. Do not retry them: the reason is permanent.
+    repeated Rejected rejected = 1;
+}
+
+message Rejected {
+    uint32 index = 1;
+    string reason = 2;
 }
 
 message GetOptions {
@@ -66,4 +96,30 @@ message DeleteAtIndexRequest {
 
 message DeleteAtIndexResponse {
     bool success = 1;
+}
+
+message SubscribeRequest {
+    // Same syntax as Query: exact segments, "*" for one segment, ">" for all below.
+    string pattern = 1;
+}
+
+message SubscribeResponse {
+    // Log sequence number of the change. It increases within each shard. 0 for initial state.
+    uint64 lsn = 1;
+    repeated Event events = 2;
+    // True on the one message that ends the initial state.
+    bool sync = 3;
+    // The shard that made the change. Order between shards is not defined.
+    uint32 shard = 4;
+}
+
+message Event {
+    enum Kind {
+        SET = 0;
+        DELETE = 1;
+        EXPIRE = 2;
+    }
+    Kind kind = 1;
+    // For SET the new item; for DELETE and EXPIRE the removed item.
+    Item item = 2;
 }

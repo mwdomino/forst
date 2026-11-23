@@ -1,6 +1,6 @@
 # Builder
-FROM rust:1.79.0 as builder
-RUN apt update && apt install -y protobuf-compiler
+FROM rust:1-bookworm AS builder
+RUN apt-get update && apt-get install -y protobuf-compiler
 WORKDIR /app
 COPY . .
 RUN cargo build --bin server --release

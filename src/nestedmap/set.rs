@@ -1,66 +1,95 @@
 use super::config::*;
 use super::options::SetOptions;
-use super::{Item, NestedMap, NestedValue};
-use std::collections::VecDeque;
+use super::{Item, NestedMap};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SetOutcome {
+    // `schedule` is set when the caller must add an expiry entry for this key at that time.
+    // `evicted` is the item this write replaced or pushed out of history.
+    Applied {
+        schedule: Option<(i64, String)>,
+        evicted: Option<Item>,
+    },
+    // An item with the same timestamp is already stored.
+    Duplicate,
+    // Older than what is kept: the current item without history, or all kept history.
+    Stale,
+}
 
 impl NestedMap {
-    pub fn set(&mut self, keys: &str, value: &Item, options: Option<SetOptions>) {
+    // Stores `value` at `value.key`.
+    pub fn set(&mut self, value: Item, options: Option<SetOptions>) -> SetOutcome {
         let options = options.unwrap_or_default();
-        let mut current_map = &mut self.data;
+        let max_history = self.max_history.max(1);
+        let mut node = self;
 
-        // Traverse to the appropriate node
-        for key in keys.split(DELIMITER) {
-            current_map = current_map
-                .entry(key.to_string())
-                .or_insert_with(|| NestedValue::Map(NestedMap::new(self.max_history)))
-                .as_map_mut();
+        // Traverse to the appropriate node, allocating a key only for new nodes
+        for key in value.key.split(DELIMITER) {
+            if !node.children.contains_key(key) {
+                node.children
+                    .insert(key.to_owned(), NestedMap::new(node.max_history));
+            }
+            node = node.children.get_mut(key).unwrap();
         }
 
-        // Access or create the items list at the final key under VALUE_KEY
-        let items = current_map
-            .entry(VALUE_KEY.to_string())
-            .or_insert_with(|| NestedValue::Items(VecDeque::new()));
+        let timestamp = value.timestamp;
+        // Keep one pending expiry entry per node: add one only if this item expires first
+        let schedule = value
+            .expires_at
+            .filter(|&at| node.scheduled_expiry.is_none_or(|s| at < s))
+            .map(|at| (at, value.key.clone()));
+        let items = &mut node.items;
+        let mut evicted = None;
 
-        if let NestedValue::Items(items) = items {
-            let length: usize = items.len();
-
-            if !options.preserve_history {
-                if length > 0 {
-                    items[0] = value.clone();
-                } else {
-                    items.insert(0, value.clone());
+        if !options.preserve_history {
+            match items.front_mut() {
+                None => items.push_front(value),
+                Some(front) if timestamp > front.timestamp => {
+                    evicted = Some(std::mem::replace(front, value))
                 }
-
-                return;
+                Some(front) if timestamp == front.timestamp => return SetOutcome::Duplicate,
+                Some(_) => return SetOutcome::Stale,
             }
-
-            // Prepend new item to the list to keep the newest items at the start
-            if length >= self.max_history {
-                items.pop_back(); // Remove the oldest item if we exceed the max history
+        } else {
+            // Insert by timestamp, so retried or reordered writes land in place
+            let pos = items.partition_point(|item| item.timestamp > timestamp);
+            if items
+                .get(pos)
+                .is_some_and(|item| item.timestamp == timestamp)
+            {
+                return SetOutcome::Duplicate;
             }
-            items.push_front(value.clone()); // Insert new item at the start of the list
+            if pos >= max_history {
+                return SetOutcome::Stale;
+            }
+            items.insert(pos, value);
+            if items.len() > max_history {
+                evicted = items.pop_back();
+            }
         }
+
+        if let Some((at, _)) = schedule {
+            node.scheduled_expiry = Some(at);
+        }
+        SetOutcome::Applied { schedule, evicted }
     }
 }
 
-#[cfg(not(test))]
+#[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::sync::Mutex;
-
     use super::*;
     use crate::nestedmap::options::*;
     use crate::nestedmap::test_helpers::*;
 
-    #[tokio::test]
-    async fn test_set() {
+    #[test]
+    fn test_set() {
         //let mut nm = NestedMap::new(1);
 
         let test_cases = vec![
             TestCase {
                 name: "Test depth 1",
                 setup: Box::new(|nm| {
-                    nm.set("a", &create_item("a", b"the value a"), None);
+                    nm.set(create_item("a", b"the value a"), None);
                 }),
                 search_keys: "a".to_string(),
                 expected: vec![create_item("a", b"the value a")],
@@ -69,7 +98,7 @@ mod tests {
             TestCase {
                 name: "Test depth 3",
                 setup: Box::new(|nm| {
-                    nm.set("a.b.c", &create_item("a.b.c", b"the value abc"), None);
+                    nm.set(create_item("a.b.c", b"the value abc"), None);
                 }),
                 search_keys: "a.b.c".to_string(),
                 expected: vec![create_item("a.b.c", b"the value abc")],
@@ -78,11 +107,7 @@ mod tests {
             TestCase {
                 name: "Test depth 6",
                 setup: Box::new(|nm| {
-                    nm.set(
-                        "a.b.c.d.e.f",
-                        &create_item("a.b.c.d.e.f", b"the value abcdef"),
-                        None,
-                    );
+                    nm.set(create_item("a.b.c.d.e.f", b"the value abcdef"), None);
                 }),
                 search_keys: "a.b.c.d.e.f".to_string(),
                 expected: vec![create_item("a.b.c.d.e.f", b"the value abcdef")],
@@ -93,15 +118,14 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_without_history() {
+    #[test]
+    fn test_set_without_history() {
         let test_cases = vec![TestCase {
             name: "Test without history option",
             setup: Box::new(|nm| {
                 for i in 1..=7 {
                     nm.set(
-                        "a.b.c.d",
-                        &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                        create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                         Some(SetOptions::new().preserve_history(false)),
                     );
                 }
@@ -114,16 +138,15 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_history() {
+    #[test]
+    fn test_set_history() {
         let test_cases = vec![
             TestCase {
                 name: "Test more than max_history values",
                 setup: Box::new(|nm| {
                     for i in 1..=7 {
                         nm.set(
-                            "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -143,8 +166,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=3 {
                         nm.set(
-                            "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -162,8 +184,7 @@ mod tests {
                 setup: Box::new(|nm| {
                     for i in 1..=5 {
                         nm.set(
-                            "a.b.c.d",
-                            &create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
+                            create_item("a.b.c.d", &format!("value{}", i).into_bytes()),
                             Some(SetOptions::new().preserve_history(true)),
                         );
                     }
@@ -183,34 +204,29 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_set_mixed_history() {
+    #[test]
+    fn test_set_mixed_history() {
         let test_cases = vec![TestCase {
-            name: "Test more than max_history values",
+            name: "Overwrite without history replaces only the newest item",
             setup: Box::new(|nm| {
                 nm.set(
-                    "a.b.c.d",
-                    &create_item("a.b.c.d", b"value1"),
+                    create_item("a.b.c.d", b"value1"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
-                    &create_item("a.b.c.d", b"value2"),
+                    create_item("a.b.c.d", b"value2"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
-                    &create_item("a.b.c.d", b"value3"),
+                    create_item("a.b.c.d", b"value3"),
+                    Some(SetOptions::new().preserve_history(false)),
+                );
+                nm.set(
+                    create_item("a.b.c.d", b"value4"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
                 nm.set(
-                    "a.b.c.d",
-                    &create_item("a.b.c.d", b"value4"),
-                    Some(SetOptions::new().preserve_history(true)),
-                );
-                nm.set(
-                    "a.b.c.d",
-                    &create_item("a.b.c.d", b"value5"),
+                    create_item("a.b.c.d", b"value5"),
                     Some(SetOptions::new().preserve_history(true)),
                 );
             }),
@@ -218,7 +234,7 @@ mod tests {
             expected: vec![
                 create_item("a.b.c.d", b"value5"),
                 create_item("a.b.c.d", b"value4"),
-                create_item("a.b.c.d", b"value2"),
+                create_item("a.b.c.d", b"value3"),
                 create_item("a.b.c.d", b"value1"),
             ],
             max_history: 5,
@@ -227,57 +243,102 @@ mod tests {
         set_tests(test_cases)
     }
 
-    #[tokio::test]
-    async fn test_expiration() {
-        let nm = Arc::new(Mutex::new(NestedMap::new(1)));
-
-        let mut nm_locked = nm.lock().unwrap();
-        nm_locked.set(
-            "a.b.c",
-            &create_item("a.b.c", b"abc"),
-            Some(SetOptions::new().ttl(Duration::from_millis(100))),
-        );
-
-        // get value
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_none() {
-                panic!("Did not find key");
-            }
-        };
-
-        // sleep for 200ms
-        let duration = Duration::from_millis(120);
-        sleep(duration).await;
-
-        // get value, should not be present
-        {
-            let nm_locked = nm.lock().unwrap();
-            if nm_locked.get("a.b.c").is_some() {
-                panic!("Found key that should have been removed!")
-            }
-        };
-    }
-
     fn set_tests(test_cases: Vec<TestCase>) {
         for test in test_cases {
-            let nm = Arc::new(Mutex::new(NestedMap::new(test.max_history)));
+            let mut nm = NestedMap::new(test.max_history);
+            (test.setup)(&mut nm);
 
-            let mut nm_locked = nm.lock().unwrap();
-            (test.setup)(&mut nm_locked);
+            let results = nm.query(
+                &test.search_keys,
+                Some(GetOptions::new().history_count(test.max_history)),
+            );
 
-            let results = {
-                let nm_locked = nm.lock().unwrap();
-                nm_locked.query(
-                    &test.search_keys,
-                    Some(GetOptions::new().history_count(test.max_history)),
-                )
-            };
-
-            assert_eq!(results.len(), test.expected.len());
+            assert_eq!(results.len(), test.expected.len(), "{}", test.name);
             for (i, v) in results.iter().enumerate() {
-                assert!(items_equal(v, &test.expected[i]));
+                assert!(items_equal(v, &test.expected[i]), "{}", test.name);
             }
         }
+    }
+
+    fn item_at(key: &str, value: &[u8], timestamp: i64) -> Item {
+        Item {
+            timestamp,
+            ..create_item(key, value)
+        }
+    }
+
+    #[test]
+    fn test_set_is_idempotent_and_ordered_by_timestamp() {
+        let history = Some(SetOptions::new().preserve_history(true));
+        let mut nm = NestedMap::new(3);
+
+        for ts in [20, 10, 30, 20, 30] {
+            nm.set(item_at("h", b"v", ts), history.clone());
+        }
+        let ts: Vec<i64> = nm
+            .query("h", Some(GetOptions::new().history_count(3)))
+            .iter()
+            .map(|i| i.timestamp)
+            .collect();
+        assert_eq!(ts, vec![30, 20, 10]);
+
+        // Full history: older than everything kept is stale, newer pushes out the oldest
+        assert_eq!(
+            nm.set(item_at("h", b"v", 5), history.clone()),
+            SetOutcome::Stale
+        );
+        nm.set(item_at("h", b"v", 40), history.clone());
+        assert_eq!(
+            nm.query("h", Some(GetOptions::new().history_count(3)))
+                .len(),
+            3
+        );
+        assert_eq!(
+            nm.query("h", Some(GetOptions::new().history_count(3)))[2].timestamp,
+            20
+        );
+    }
+
+    #[test]
+    fn test_set_without_history_is_last_write_wins() {
+        let mut nm = NestedMap::new(1);
+        let applied = SetOutcome::Applied {
+            schedule: None,
+            evicted: None,
+        };
+
+        assert_eq!(nm.set(item_at("k", b"new", 20), None), applied);
+        assert_eq!(nm.set(item_at("k", b"old", 10), None), SetOutcome::Stale);
+        assert_eq!(
+            nm.set(item_at("k", b"dup", 20), None),
+            SetOutcome::Duplicate
+        );
+        assert_eq!(nm.get("k").unwrap().value, &b"new"[..]);
+    }
+
+    #[test]
+    fn test_set_schedules_one_expiry_per_node() {
+        let mut nm = NestedMap::new(1);
+        let expiring = |ts, at| Item {
+            expires_at: Some(at),
+            ..item_at("k", b"v", ts)
+        };
+
+        assert!(matches!(
+            nm.set(expiring(1, 100), None),
+            SetOutcome::Applied {
+                schedule: Some((100, _)),
+                ..
+            }
+        ));
+        // A later expiry needs no new entry: the pending one reschedules when it fires
+        assert!(matches!(
+            nm.set(expiring(2, 200), None),
+            SetOutcome::Applied {
+                schedule: None,
+                evicted: Some(_)
+            }
+        ));
+        assert_eq!(nm.expire("k", 100, 100), (vec![], Some(200)));
     }
 }

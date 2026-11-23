@@ -2,17 +2,14 @@ use tonic::transport::Channel;
 use tonic::Request;
 
 use clap::{Arg, ArgAction, Command};
-use rmp_serde::decode::from_read_ref;
+use rmp_serde::from_slice;
 use serde_json::{json, to_string, to_string_pretty, Value};
 
 use datastore::datastore_client::DatastoreClient;
 use datastore::{GetRequest, QueryRequest, SetRequest};
+use rs_datastore::service::proto as datastore;
 
 use base64::{engine::general_purpose, Engine as _};
-
-pub mod datastore {
-    tonic::include_proto!("datastore");
-}
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: &str = "7777";
@@ -31,7 +28,7 @@ async fn get(
             println!("{}", general_purpose::STANDARD.encode(&item.value));
         } else {
             // deserialize messagepack into serde_json::Value
-            match from_read_ref::<_, Value>(&item.value) {
+            match from_slice::<Value>(&item.value) {
                 Ok(value) => {
                     if let Ok(json_str) = to_string_pretty(&value) {
                         println!("{}", json_str);
@@ -68,6 +65,7 @@ async fn set(
             preserve_history: true,
             ttl,
         }),
+        timestamp_ns: 0,
     };
     let response = client.set(Request::new(request)).await?;
     println!(
@@ -101,7 +99,7 @@ async fn query(
             }));
         } else {
             // deserialize messagepack into serde_json::Value
-            let value = match from_read_ref::<_, Value>(&item.value) {
+            let value = match from_slice::<Value>(&item.value) {
                 Ok(value) => value,
                 Err(_) => json!({"error": "Failed to deserialize MessagePack data"}),
             };
@@ -196,9 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(("query", sub_matches)) => {
             let key = sub_matches.get_one::<String>("key").unwrap();
-            let history_count = sub_matches
-                .get_one::<String>("history_count")
-                .and_then(|v| v.parse::<i64>().ok());
+            let history_count = sub_matches.get_one::<i64>("history_count").copied();
             let raw = sub_matches.get_flag("raw");
 
             query(&mut client, key.to_string(), history_count, raw).await?;
