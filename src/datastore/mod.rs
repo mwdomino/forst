@@ -149,8 +149,18 @@ impl Datastore {
             return rejected;
         }
 
+        // Copy items for subscribers before locking, to keep the write lock hold short.
+        // The check repeats under the lock, so a subscriber that just joined misses nothing.
+        let clone_all = |valid: &[(Item, bool)]| valid.iter().map(|(i, _)| i.clone()).collect();
+        let copies: Option<Vec<Item>> = self.shared.has_subscribers().then(|| clone_all(&valid));
+
         let mut state = self.shared.state.write();
-        let publish = self.shared.has_subscribers();
+        let copies: Vec<Item> = match (self.shared.has_subscribers(), copies) {
+            (false, _) => Vec::new(),
+            (true, Some(copies)) => copies,
+            (true, None) => clone_all(&valid),
+        };
+        let mut copies = copies.into_iter();
         let mut events = Vec::new();
         let mut applied = false;
         let mut wake = false;
@@ -159,7 +169,7 @@ impl Datastore {
 
         for (item, preserve_history) in valid {
             let key = item.key.clone();
-            let event = publish.then(|| item.clone());
+            let event = copies.next();
             let options = SetOptions::new().preserve_history(preserve_history);
             let SetOutcome::Applied {
                 schedule,

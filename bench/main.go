@@ -31,6 +31,8 @@ var (
 	ttl      = flag.Int64("ttl", 20, "ttl in seconds for Set (0 = none)")
 	batch    = flag.Int("batch", 0, "items per SetBatch; 0 sends unary Set. Get and Query are not batched")
 	history  = flag.Bool("history", false, "set preserve_history on writes")
+	subs     = flag.Int("subscribers", 0, "subscribers to run during the timed run")
+	pattern  = flag.String("pattern", ">", "subscription pattern")
 )
 
 const branches = 1000
@@ -57,6 +59,14 @@ func main() {
 			_, err := c.Set(ctx, setRequest(key(i), value, 0))
 			return err
 		})
+	}
+
+	var events atomic.Int64
+	for i := 0; i < *subs; i++ {
+		go subscribe(clients[i%len(clients)], &events)
+	}
+	if *subs > 0 {
+		defer func() { fmt.Printf("subscriber events received=%d\n", events.Load()) }()
 	}
 
 	if *batch > 0 {
@@ -155,4 +165,21 @@ func run(n int, clients []pb.DatastoreClient, op func(pb.DatastoreClient, int, *
 	}
 	wg.Wait()
 	return lat, errs.Load()
+}
+
+// subscribe counts every event it receives until the stream ends.
+func subscribe(c pb.DatastoreClient, events *atomic.Int64) {
+	stream, err := c.Subscribe(context.Background(), &pb.SubscribeRequest{Pattern: *pattern})
+	if err != nil {
+		log.Printf("subscribe: %v", err)
+		return
+	}
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			log.Printf("subscription ended: %v", err)
+			return
+		}
+		events.Add(int64(len(msg.Events)))
+	}
 }
