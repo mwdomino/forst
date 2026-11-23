@@ -44,7 +44,7 @@ impl DatastoreTrait for MyDatastore {
     ) -> Result<tonic::Response<GetResponse>, tonic::Status> {
         let key = request.into_inner().key;
 
-        match self.datastore.get(&key).await {
+        match self.datastore.get(&key) {
             Some(item) => {
                 let reply = GetResponse {
                     item: Some(Item {
@@ -70,7 +70,7 @@ impl DatastoreTrait for MyDatastore {
             ttl: std::time::Duration::from_secs(opts.ttl as u64),
         });
 
-        self.datastore.set(req.key, &req.value, options).await;
+        self.datastore.set(req.key, &req.value, options);
 
         let reply = SetResponse { success: true };
         Ok(tonic::Response::new(reply))
@@ -93,7 +93,7 @@ impl DatastoreTrait for MyDatastore {
             }),
         });
 
-        let items = self.datastore.query(&key, options).await;
+        let items = self.datastore.query(&key, options);
 
         if items.is_empty() {
             return Err(tonic::Status::not_found(

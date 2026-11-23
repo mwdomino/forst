@@ -1,161 +1,125 @@
-use std::collections::BinaryHeap;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicI64, Arc};
+use std::cmp::Reverse;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::mpsc;
-use tokio::sync::Mutex;
+
+use parking_lot::{Mutex, RwLock};
+use tokio::sync::Notify;
+use tokio::time::Instant;
 
 use crate::nestedmap::options::{GetOptions, SetOptions};
 use crate::nestedmap::NestedMap;
-use event::Event;
-use expiration::ExpirationEntry;
+use expiration::{ExpirationEntry, ExpirationHeap};
 
 pub use crate::nestedmap::Item;
 
-pub mod event;
 pub mod expiration;
 
 #[derive(Debug)]
 pub struct Datastore {
-    map: Arc<Mutex<NestedMap>>,
-    ttl: Arc<Mutex<BinaryHeap<ExpirationEntry>>>,
-    id_counter: Arc<AtomicI64>,
-    event_sender: mpsc::Sender<Event>,
+    map: Arc<RwLock<NestedMap>>,
+    ttl: Arc<Mutex<ExpirationHeap>>,
+    wake: Arc<Notify>,
+    id_counter: AtomicI64,
 }
 
 impl Datastore {
+    // Must be called inside a tokio runtime: it spawns the expiration task.
     pub fn new(max_history: usize) -> Self {
-        env_logger::init();
-
-        let (sender, receiver) = mpsc::channel::<Event>(10000);
-
         let datastore = Datastore {
-            map: Arc::new(Mutex::new(NestedMap::new(max_history))),
-            ttl: Arc::new(Mutex::new(BinaryHeap::new())),
-            id_counter: Arc::new(AtomicI64::new(0)),
-            event_sender: sender,
+            map: Arc::new(RwLock::new(NestedMap::new(max_history))),
+            ttl: Arc::default(),
+            wake: Arc::default(),
+            id_counter: AtomicI64::new(0),
         };
 
-        datastore.event_loop(receiver);
+        tokio::spawn(expiration::reap(
+            datastore.map.clone(),
+            datastore.ttl.clone(),
+            datastore.wake.clone(),
+        ));
         datastore
     }
 
-    // Async method to expose set functionality
-    pub async fn set(&self, key: String, value: &[u8], options: Option<SetOptions>) {
-        let mut map = self.map.lock().await;
-
+    pub fn set(&self, key: String, value: &[u8], options: Option<SetOptions>) {
         let id = self.id_counter.fetch_add(1, Ordering::Relaxed);
-
-        if let Some(ref options) = options {
-            if options.ttl.as_millis() > 0 {
-                let expires_at = SystemTime::now() + options.ttl;
-
-                let entry = ExpirationEntry {
-                    id,
-                    key: key.to_string(),
-                    expires_at,
-                };
-
-                let sender = self.event_sender.clone();
-                let _ = sender.send(Event::TTLInsert(entry)).await;
-            }
-        }
+        let ttl = options.as_ref().map(|o| o.ttl).filter(|ttl| !ttl.is_zero());
 
         let new_item = Item {
-            key: key.to_string(),
+            key: key.clone(),
             value: value.to_vec(),
             timestamp: SystemTime::now(),
             id,
         };
 
-        map.set(&key, &new_item, options);
+        // Insert before scheduling expiry, so the reaper never misses the item.
+        self.map.write().set(&key, &new_item, options);
+
+        if let Some(ttl) = ttl {
+            let expires_at = Instant::now() + ttl;
+            let mut heap = self.ttl.lock();
+            let earliest = heap.peek().is_none_or(|e| expires_at < e.0.expires_at);
+            heap.push(Reverse(ExpirationEntry { expires_at, id, key }));
+            drop(heap);
+            if earliest {
+                self.wake.notify_one();
+            }
+        }
     }
 
-    pub async fn get(&self, key: &str) -> Option<Item> {
-        let map = self.map.lock().await;
-        map.get(key).cloned()
+    pub fn get(&self, key: &str) -> Option<Item> {
+        self.map.read().get(key).cloned()
     }
 
-    pub async fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
-        let map = self.map.lock().await;
-        map.query(key, options)
+    pub fn query(&self, key: &str, options: Option<GetOptions>) -> Vec<Item> {
+        self.map.read().query(key, options)
     }
 }
-
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
-
     use tokio::time::sleep;
+
+    fn set_ttl(ds: &Datastore, key: &str, ms: u64) {
+        let opts = SetOptions::new().ttl(Duration::from_millis(ms));
+        ds.set(key.to_string(), b"abc", Some(opts));
+    }
 
     #[tokio::test]
     async fn test_expiration() {
-        let ds = Arc::new(Datastore::new(1));
+        let ds = Datastore::new(1);
 
-        // set value with ttl
-        println!("#### SETTING A");
-        ds.clone()
-            .set(
-                "a.b.c".to_string(),
-                b"abc",
-                Some(SetOptions::new().ttl(Duration::from_millis(100))),
-            )
-            .await;
-        ds.clone()
-            .set(
-                "a.b.b".to_string(),
-                b"abc",
-                Some(SetOptions::new().ttl(Duration::from_millis(100))),
-            )
-            .await;
+        set_ttl(&ds, "a.b.c", 100);
+        set_ttl(&ds, "a.b.b", 100);
+        set_ttl(&ds, "a.b.d", 200);
+        set_ttl(&ds, "a.b.e", 400);
+        assert_eq!(ds.query("a.b.>", None).len(), 4);
 
-        println!("#### SETTING B");
-        ds.clone()
-            .set(
-                "a.b.d".to_string(),
-                b"abd",
-                Some(SetOptions::new().ttl(Duration::from_millis(200))),
-            )
-            .await;
-
-        println!("#### SETTING C");
-        ds.clone()
-            .set(
-                "a.b.e".to_string(),
-                b"abe",
-                Some(SetOptions::new().ttl(Duration::from_millis(400))),
-            )
-            .await;
-
-        // get values
-        let items = ds.query("a.b.>", None).await;
-        assert_eq!(items.len(), 4);
-
-        // check first expiration
         sleep(Duration::from_millis(110)).await;
-        let items = ds.query("a.b.>", None).await;
-        assert_eq!(items.len(), 2);
+        assert_eq!(ds.query("a.b.>", None).len(), 2);
+        assert!(ds.get("a.b.c").is_none());
 
-        if ds.get("a.b.c").await.is_some() {
-            panic!("Found key that should have been removed! a.b.c")
-        }
-
-        // check second expiration
         sleep(Duration::from_millis(110)).await;
-        let items = ds.query("a.b.>", None).await;
-        assert_eq!(items.len(), 1);
+        assert_eq!(ds.query("a.b.>", None).len(), 1);
+        assert!(ds.get("a.b.d").is_none());
 
-        if ds.get("a.b.d").await.is_some() {
-            panic!("Found key that should have been removed! a.b.d")
-        }
-
-        // check last expiration
         sleep(Duration::from_millis(210)).await;
-        let items = ds.query("a.b.>", None).await;
-        assert_eq!(items.len(), 0);
+        assert_eq!(ds.query("a.b.>", None).len(), 0);
+        assert!(ds.get("a.b.e").is_none());
+    }
 
-        if ds.get("a.b.e").await.is_some() {
-            panic!("Found key that should have been removed! a.b.e")
-        }
+    // An earlier expiry added after a later one must wake the reaper early.
+    #[tokio::test]
+    async fn test_earlier_expiry_wakes_reaper() {
+        let ds = Datastore::new(1);
+
+        set_ttl(&ds, "a.late", 10_000);
+        sleep(Duration::from_millis(10)).await;
+        set_ttl(&ds, "a.early", 50);
+
+        sleep(Duration::from_millis(100)).await;
+        assert!(ds.get("a.early").is_none());
+        assert!(ds.get("a.late").is_some());
     }
 }
