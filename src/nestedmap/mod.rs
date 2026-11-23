@@ -1,6 +1,8 @@
 use foldhash::HashMap;
 use std::collections::VecDeque;
 
+use bytes::Bytes;
+
 pub mod config;
 pub mod delete;
 pub mod get;
@@ -25,7 +27,7 @@ pub struct NestedMap {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Item {
     pub key: String,
-    pub value: Vec<u8>,
+    pub value: Bytes,
     pub timestamp: i64,
     pub expires_at: Option<i64>,
 }

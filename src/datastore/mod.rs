@@ -298,7 +298,7 @@ fn validate(item: SetItem, now: i64) -> Result<(Item, bool), &'static str> {
 
     let stored = Item {
         key: item.key,
-        value: item.value,
+        value: item.value.into(),
         timestamp,
         expires_at,
     };

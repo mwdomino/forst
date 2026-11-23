@@ -55,8 +55,8 @@ mod tests {
         nm.set(create_item("a.__value", b"child"), None);
         nm.set(create_item("a", b"parent"), None);
 
-        assert_eq!(nm.get("a").unwrap().value, b"parent");
-        assert_eq!(nm.get("a.__value").unwrap().value, b"child");
+        assert_eq!(nm.get("a").unwrap().value, &b"parent"[..]);
+        assert_eq!(nm.get("a.__value").unwrap().value, &b"child"[..]);
     }
 
     fn get_tests(test_cases: Vec<TestCase>) {

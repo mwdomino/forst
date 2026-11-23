@@ -313,7 +313,7 @@ mod tests {
             nm.set(item_at("k", b"dup", 20), None),
             SetOutcome::Duplicate
         );
-        assert_eq!(nm.get("k").unwrap().value, b"new");
+        assert_eq!(nm.get("k").unwrap().value, &b"new"[..]);
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 
+use bytes::Bytes;
+
 use super::*;
 
 pub fn items_equal(a: &Item, b: &Item) -> bool {
@@ -19,7 +21,7 @@ pub fn create_item(key: &str, value: &[u8]) -> Item {
     static NEXT_TIMESTAMP: AtomicI64 = AtomicI64::new(1);
     Item {
         key: key.to_string(),
-        value: value.to_vec(),
+        value: Bytes::copy_from_slice(value),
         timestamp: NEXT_TIMESTAMP.fetch_add(1, Ordering::Relaxed),
         expires_at: None,
     }

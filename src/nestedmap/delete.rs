@@ -188,13 +188,16 @@ mod tests {
         );
 
         // delete index 2
-        assert_eq!(nm.delete_at_index("a.b.c", 2).unwrap().value, b"value1");
+        assert_eq!(
+            nm.delete_at_index("a.b.c", 2).unwrap().value,
+            &b"value1"[..]
+        );
 
         let items: Vec<Item> = nm.query("a.b.c", Some(GetOptions::new().history_count(3)));
         assert_eq!(items.len(), 2);
 
-        assert_eq!(items[0].value, b"value3");
-        assert_eq!(items[1].value, b"value2");
+        assert_eq!(items[0].value, &b"value3"[..]);
+        assert_eq!(items[1].value, &b"value2"[..]);
     }
 
     #[test]

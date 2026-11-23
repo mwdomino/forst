@@ -33,6 +33,7 @@ var (
 	history  = flag.Bool("history", false, "set preserve_history on writes")
 	subs     = flag.Int("subscribers", 0, "subscribers to run during the timed run")
 	pattern  = flag.String("pattern", ">", "subscription pattern")
+	valSize  = flag.Int("valuesize", 10, "bytes per value")
 )
 
 const branches = 1000
@@ -52,7 +53,7 @@ func main() {
 		clients[i] = pb.NewDatastoreClient(conn)
 	}
 	ctx := context.Background()
-	value := []byte("some value")
+	value := make([]byte, *valSize)
 
 	if *prefill {
 		run(*keyspace, clients, func(c pb.DatastoreClient, i int, _ *rand.Rand) error {
